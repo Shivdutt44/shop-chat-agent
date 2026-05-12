@@ -53,6 +53,6 @@ export default defineConfig({
     assetsInlineLimit: 0,
   },
   optimizeDeps: {
-    include: ["@shopify/app-bridge-react"],
+    include: ["react", "react-dom", "react-router", "@shopify/app-bridge-react"],
   },
 });

@@ -135,9 +135,8 @@ async function handleChatSession({
     mcpApiUrl,
   );
 
-  try {
-    // Send conversation ID to client
-    stream.sendMessage({ type: 'id', conversation_id: conversationId });
+  // Send conversation ID to client
+  stream.sendMessage({ type: 'id', conversation_id: conversationId });
 
     // Connect to MCP servers and get available tools
     let storefrontMcpTools = [], customerMcpTools = [];
@@ -275,10 +274,6 @@ async function handleChatSession({
         products: productsToDisplay
       });
     }
-  } catch (error) {
-    // The streaming handler takes care of error handling
-    throw error;
-  }
 }
 
 /**
