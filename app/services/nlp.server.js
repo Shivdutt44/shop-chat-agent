@@ -193,60 +193,122 @@ export function classifyIntent(message) {
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * Generates a smart, structured response based on intent + tool data
+ * Generates a response based on intent + REAL tool data.
+ * When toolData is available it always wins — no hardcoded store-specific values.
+ * When toolData is null an honest, generic message is shown instead.
  */
 export function generateResponse(intent, entities, toolData = null) {
-  const { orderId, budget, color, size, keywords } = entities;
+  const { budget, color, size, keywords } = entities;
 
   switch (intent) {
+    // ── Static intents (no store-specific data needed) ─────────────
     case 'greeting':
-      return `👋 **Namaste!** Welcome to our store!\n\nMain aapki kaise madad kar sakta hoon? Aap kisi **product ke baare mein pooch sakte hain**, **order track** kar sakte hain, ya **support** le sakte hain.\n\n[Related: Show me trending products]\n[Related: Track my order]\n[Related: Are there any discounts?]`;
+      return `👋 **Namaste!** Welcome!\n\nMain aapki kaise madad kar sakta hoon?\n\n[Related: Show me products]\n[Related: Track my order]\n[Related: What is the return policy?]`;
 
     case 'thanks':
-      return `😊 **You're welcome!** Khushi hui aapki madad karke!\n\nKoi aur sawaal ho toh zaroor poochein. Main hamesha yahan hoon!\n\n[Related: Show me more products]\n[Related: Track my order]\n[Related: What are today's offers?]`;
+      return `😊 **You're welcome!** Khushi hui aapki madad karke!\n\nKoi aur sawaal ho toh zaroor poochein.\n\n[Related: Show me more products]\n[Related: Track my order]`;
 
+    // ── Order tracking ─────────────────────────────────────────────
     case 'order_tracking': {
       if (!toolData) {
-        return `🔍 Aapka order track karne ke liye mujhe **Order ID** chahiye.\n\nKripya apna **Order ID ya Order Number** share karein (example: #1054).\n\n[Related: How long does delivery take?]\n[Related: What is your return policy?]\n[Related: Contact customer support]`;
+        return `🔍 **Order Track Karne Ke Liye:**\n\nApna **Order ID ya Order Number** share karein (e.g. #1054) aur main aapka status check kar deta hoon.\n\n[Related: What is the return policy?]\n[Related: Contact support]`;
       }
       return formatOrderResponse(toolData);
     }
 
-    case 'refund':
-      return `💰 **Refund Process — Step by Step:**\n\n- **Refund Timeline:** 5-7 business days after approval\n- **Process:** Refund is credited to your original payment method\n- **Status Check:** Share your Order ID to check refund status\n\n> ⚠️ Agar aapka order 7 din se zyada purana hai, toh exchange eligible ho sakta hai.\n\n📞 Support se contact karen: [support@store.com](mailto:support@store.com)\n\n[Related: Track my order]\n[Related: Start a return request]\n[Related: How long does refund take?]`;
+    // ── Policy intents — use real store policy from MCP ────────────
+    case 'shipping': {
+      if (toolData) {
+        const policy = extractPolicyText(toolData, ['shipping', 'delivery']);
+        if (policy) {
+          return `🚚 **Shipping Policy (Store Se):**\n\n${policy}\n\n[Related: Track my order]\n[Related: What is the return policy?]`;
+        }
+      }
+      return `🚚 **Shipping Information:**\n\nShipping details ke liye hamari store ki **Shipping Policy** page visit karein, ya apna order ID share karein delivery status check karne ke liye.\n\n[Related: Track my existing order]\n[Related: What is the return policy?]\n[Related: Contact support]`;
+    }
 
-    case 'return':
-      return `📦 **Return Request Process:**\n\n1. **Check Eligibility:** Product delivery ke **7 din ke andar** return eligible hai\n2. **Condition:** Product unused, original packaging mein hona chahiye\n3. **Initiate:** Apna Order ID share karein return start karne ke liye\n\n> 💡 Exchange bhi possible hai agar size ya color change karna ho.\n\n[Related: Start my refund]\n[Related: Track my order]\n[Related: What is the return policy?]`;
+    case 'return': {
+      if (toolData) {
+        const policy = extractPolicyText(toolData, ['return', 'refund', 'exchange']);
+        if (policy) {
+          return `📦 **Return & Exchange Policy (Store Se):**\n\n${policy}\n\n[Related: Track my order]\n[Related: Contact support]`;
+        }
+      }
+      return `📦 **Return / Exchange:**\n\nReturn details ke liye hamari store ki **Refund Policy** page visit karein, ya apna Order ID share karein aur humari team se contact karein.\n\n[Related: Track my order]\n[Related: Contact support]`;
+    }
 
-    case 'cancel':
-      return `❌ **Order Cancellation:**\n\n- Order **shipped hone se pehle** cancel ho sakta hai\n- **Cancel karne ke liye:** Apna Order ID share karein\n- Agar order already shipped hai, toh **return process** follow karein\n\n📌 Cancellation ke baad refund 5-7 din mein process hoga.\n\n[Related: Track my order status]\n[Related: Start a return instead]\n[Related: Check refund status]`;
+    case 'refund': {
+      if (toolData) {
+        const policy = extractPolicyText(toolData, ['refund', 'return']);
+        if (policy) {
+          return `💰 **Refund Policy (Store Se):**\n\n${policy}\n\n[Related: Track my order]\n[Related: Start a return request]`;
+        }
+      }
+      return `💰 **Refund Information:**\n\nRefund details ke liye hamari store ki **Refund Policy** page visit karein, ya apna Order ID share karein.\n\n[Related: Track my order]\n[Related: Start a return request]\n[Related: Contact support]`;
+    }
 
-    case 'shipping':
-      return `🚚 **Shipping Information:**\n\n| Type | Delivery Time | Cost |\n|------|--------------|------|\n| Standard | 5-7 Business Days | FREE above ₹499 |\n| Express | 2-3 Business Days | ₹99 |\n| Same Day | Same Day | ₹149 (Select cities) |\n\n> 📍 **COD** (Cash on Delivery) available on all orders!\n\n[Related: Track my existing order]\n[Related: Are there any shipping offers?]\n[Related: What is the return policy?]`;
+    case 'cancel': {
+      if (toolData) {
+        const policy = extractPolicyText(toolData, ['cancel', 'refund']);
+        if (policy) {
+          return `❌ **Cancellation Policy (Store Se):**\n\n${policy}\n\n[Related: Track my order status]\n[Related: Start a return instead]`;
+        }
+      }
+      return `❌ **Order Cancel Karna:**\n\nApna **Order ID** share karein aur main check karta hoon ki order cancel ho sakta hai ya nahi.\n\nAgar order ship ho chuka hai toh **return process** follow karna hoga.\n\n[Related: Track my order status]\n[Related: Start a return instead]\n[Related: Contact support]`;
+    }
 
-    case 'discount':
-      return `🏷️ **Current Offers & Discounts:**\n\n- 🔥 **Sale On:** Use code **SAVE10** for 10% off\n- 🎉 **Free Shipping** on orders above ₹499\n- 💎 **VIP Members** get extra 15% off\n\n> 💡 Tip: Search for **"sale"** ya **"offer"** products dekhne ke liye poochein!\n\n[Related: Show me sale products]\n[Related: Best products under ₹1000]\n[Related: Premium collection dikhao]`;
+    // ── Discount — show real sale products via MCP search ──────────
+    case 'discount': {
+      if (toolData) {
+        return `🏷️ **Store Ke Current Sale Products:**\n\nMain aapke liye store ke available sale/discount products dhundh raha hoon — neeche dekhen!\n\n[Related: Best products under budget]\n[Related: Premium collection]\n[Related: Track my order]`;
+      }
+      return `🏷️ **Discounts & Offers:**\n\nCurrent offers ke liye store ki website visit karein ya hamari team se contact karein.\n\n[Related: Show me all products]\n[Related: Contact support]`;
+    }
 
-    case 'payment':
-      return `💳 **Payment Support:**\n\n**Accepted Payment Methods:**\n- UPI (Google Pay, PhonePe, Paytm)\n- Credit / Debit Cards (Visa, Mastercard, RuPay)\n- Net Banking\n- EMI (No Cost EMI available)\n- **COD** (Cash on Delivery)\n\n> ⚠️ Payment fail hone par **2-3 minutes wait** karein — amount automatically return hoga.\n\n[Related: Track my order]\n[Related: Contact support]\n[Related: Check refund status]`;
+    // ── Support — use real shop contact from MCP ───────────────────
+    case 'support': {
+      if (toolData) {
+        const contact = extractShopContact(toolData);
+        if (contact) {
+          return `🛎️ **Customer Support:**\n\n${contact}\n\n[Related: My order hasn't arrived]\n[Related: I want to return a product]\n[Related: Payment issue help]`;
+        }
+      }
+      return `🛎️ **Customer Support:**\n\nHum aapki madad ke liye hain! Apna issue describe karein ya store ki **Contact Us** page visit karein.\n\n[Related: My order hasn't arrived]\n[Related: I want to return a product]\n[Related: Payment issue help]`;
+    }
 
-    case 'support':
-      return `🛎️ **Customer Support:**\n\n**Hum aapki poori madad ke liye hain!**\n\n- 📧 Email: support@store.com\n- 📞 Phone: Available Mon-Sat, 10 AM - 7 PM\n- 💬 Chat: Main abhi available hoon!\n\n**Kya issue hai?** Neeche se select karein:\n\n[Related: My order hasn't arrived]\n[Related: I want to return a product]\n[Related: Payment issue help]`;
+    // ── Payment — generic honest response ─────────────────────────
+    case 'payment': {
+      if (toolData) {
+        const shopInfo = extractShopContact(toolData);
+        if (shopInfo) {
+          return `💳 **Payment Support:**\n\n${shopInfo}\n\n[Related: Track my order]\n[Related: Check refund status]`;
+        }
+      }
+      return `💳 **Payment Issue:**\n\nPayment fail hone par kuch minutes mein amount automatically return hota hai.\n\nAgar issue persist kare toh apna **Order ID** ya **Transaction ID** share karein.\n\n[Related: Track my order]\n[Related: Contact support]\n[Related: Check refund status]`;
+    }
 
+    // ── Cart — generic honest response ────────────────────────────
     case 'cart':
-      return `🛒 **Smart Cart Engine:**\n\nAapke cart mein items wait kar rahe hain! Checkout complete karein aur payein:\n- ✨ **Extra 5% OFF** on prepaid orders\n- 🚚 **Free Express Shipping**\n\n> 💡 Tip: Checkout jaldi karein, kuch items out of stock ho sakte hain.\n\n[Related: Complete checkout now]\n[Related: Show me my cart]\n[Related: Are there any discount codes?]`;
+      return `🛒 **Your Cart:**\n\nCheckout complete karne ke liye store ki website par jaayein.\n\n[Related: Show me products]\n[Related: Are there any offers?]`;
 
+    // ── Product search intents (all backed by MCP catalog search) ──
     case 'budget': {
       const budgetText = budget ? `₹${budget.toLocaleString('en-IN')}` : 'aapke budget mein';
       const colorText = color ? ` **${color}** color mein` : '';
       const sizeText = size ? ` size **${size}**` : '';
       const kwText = keywords.filter(k => k.length > 3).slice(0, 3).join(', ');
-      return `🔍 **Searching for${colorText}${sizeText} ${kwText || 'products'} under ${budgetText}...**\n\nMain aapke liye best value-for-money products dhundh raha hoon. Ek second...\n\n**🤖 Automation Engine Upsell:** Agar aap budget thoda badhate hain toh aapko premium durability wale products mil sakte hain.\n\n[Related: Show premium alternatives]\n[Related: Are there any discount codes?]\n[Related: Free shipping products dikhao]`;
+      if (toolData) {
+        return `🔍 **${colorText}${sizeText} ${kwText || 'Products'} under ${budgetText}:**\n\nNeeche store ke matching products dekhen!\n\n[Related: Show premium alternatives]\n[Related: What is the return policy?]`;
+      }
+      return `🔍 **${colorText}${sizeText} ${kwText || 'Products'} under ${budgetText}:**\n\nAbhi store mein yeh products available nahi hain ya search nahi ho saka. Store ki website visit karein.\n\n[Related: Show all products]\n[Related: Contact support]`;
     }
 
     case 'premium': {
       const kwText = keywords.filter(k => k.length > 3).slice(0, 3).join(', ');
-      return `💎 **Premium ${kwText || 'Products'} Collection:**\n\nMain aapke liye **top-rated, high-quality** products dhundh raha hoon...\n\n- ✅ Trusted brands\n- ✅ Highest rated\n- ✅ Premium quality guarantee\n- ✅ Best sellers\n\n**🤖 Automation Engine VIP Offer:** Premium buyers ke liye humari special VIP shipping free hai.\n\n[Related: Compare two products]\n[Related: Budget alternatives bhi dikhao]\n[Related: What are the return policies?]`;
+      if (toolData) {
+        return `💎 **Premium ${kwText || 'Products'}:**\n\nStore ke top-rated products neeche dekhen!\n\n[Related: Budget alternatives]\n[Related: What is the return policy?]`;
+      }
+      return `💎 **Premium ${kwText || 'Products'}:**\n\nStore mein premium products dekhne ke liye website visit karein.\n\n[Related: Show all products]\n[Related: Contact support]`;
     }
 
     case 'product_search':
@@ -255,54 +317,175 @@ export function generateResponse(intent, entities, toolData = null) {
       const sizeText = size ? `size **${size}** ` : '';
       const kwText = keywords.filter(k => k.length > 3).slice(0, 3).join(' ');
       const budgetText = budget ? ` under **₹${budget.toLocaleString('en-IN')}**` : '';
-      
-      let crossSell = '';
-      if (kwText.includes('shoe') || kwText.includes('sneaker')) {
-        crossSell = '\n\n**🤖 Automation Engine Suggests:** Shoes ke saath humare premium **sports socks** zaroor check karein!';
-      } else if (kwText.includes('phone') || kwText.includes('mobile')) {
-        crossSell = '\n\n**🤖 Automation Engine Suggests:** Naye phone ke liye **screen protector aur case** add karna na bhoolein!';
-      } else if (kwText.includes('laptop')) {
-        crossSell = '\n\n**🤖 Automation Engine Suggests:** Laptop ke liye **cooling pad aur wireless mouse** best combo rahega!';
-      } else {
-        crossSell = '\n\n**🤖 Automation Engine Suggests:** In products par abhi limited time offer chal raha hai, jaldi check karein!';
-      }
 
-      return `🛍️ **Searching for ${colorText}${sizeText}${kwText || 'products'}${budgetText}...**\n\nMain aapke liye best matching products dhundh raha hoon! Ek moment...${crossSell}\n\n[Related: Filter by price range]\n[Related: Show trending products]\n[Related: Premium alternatives dikhao]`;
+      if (toolData) {
+        return `🛍️ **${colorText}${sizeText}${kwText || 'Products'}${budgetText} — Store Results:**\n\nNeeche store ke matching products dekhen!\n\n[Related: Filter by price range]\n[Related: Show premium options]\n[Related: What is the return policy?]`;
+      }
+      return `🛍️ **${colorText}${sizeText}${kwText || 'Products'}${budgetText}:**\n\nAbhi yeh products search nahi ho sake. Store ki website visit karein ya kuch aur try karein.\n\n[Related: Show trending products]\n[Related: Contact support]`;
     }
   }
 }
 
 /**
- * Format order data from tool response into a readable message
+ * Format real order data from MCP tool response into a readable message.
+ * Handles both camelCase (GraphQL) and snake_case field names.
  */
 function formatOrderResponse(orderData) {
   try {
-    const order = typeof orderData === 'string' ? JSON.parse(orderData) : orderData;
+    const raw = typeof orderData === 'string' ? JSON.parse(orderData) : orderData;
+
+    // MCP may wrap in { order: {...} } or { orders: [...] }
+    const order = raw.order || (Array.isArray(raw.orders) ? raw.orders[0] : null) ||
+      (Array.isArray(raw) ? raw[0] : null) || raw;
+
+    if (!order || typeof order !== 'object') {
+      throw new Error('Unrecognised order structure');
+    }
+
     const lines = ['📦 **Order Details:**\n'];
 
-    if (order.id || order.name) lines.push(`- **Order:** ${order.name || '#' + order.id}`);
-    if (order.financial_status) lines.push(`- **Payment:** ${order.financial_status.toUpperCase()}`);
-    if (order.fulfillment_status) lines.push(`- **Fulfillment:** ${order.fulfillment_status || 'Unfulfilled'}`);
+    // ID / name
+    const name = order.name || order.orderNumber || order.order_number;
+    const id = order.id || order.orderId || order.order_id;
+    if (name || id) lines.push(`- **Order:** ${name || '#' + String(id).replace(/\D/g, '')}`);
 
-    if (order.fulfillments && order.fulfillments.length > 0) {
-      const f = order.fulfillments[0];
-      if (f.tracking_company) lines.push(`- **Courier:** ${f.tracking_company}`);
-      if (f.tracking_number) lines.push(`- **Tracking #:** \`${f.tracking_number}\``);
-      if (f.tracking_url) lines.push(`- [🔗 Track your package](${f.tracking_url})`);
+    // Financial status
+    const fin = order.financialStatus || order.financial_status;
+    if (fin) lines.push(`- **Payment:** ${String(fin).toUpperCase()}`);
+
+    // Fulfillment status
+    const ful = order.fulfillmentStatus || order.fulfillment_status;
+    lines.push(`- **Fulfillment:** ${ful ? String(ful) : 'Pending'}`);
+
+    // Tracking info
+    const fulfillments = order.fulfillments || order.fulfillmentOrders?.nodes || [];
+    if (fulfillments.length > 0) {
+      const f = fulfillments[0];
+      const courier = f.trackingCompany || f.tracking_company;
+      const trackNum = f.trackingNumber || f.tracking_number;
+      const trackUrl = f.trackingUrl || f.tracking_url ||
+        (Array.isArray(f.trackingInfo) ? f.trackingInfo[0]?.url : null);
+
+      if (courier) lines.push(`- **Courier:** ${courier}`);
+      if (trackNum) lines.push(`- **Tracking #:** \`${trackNum}\``);
+      if (trackUrl) lines.push(`- [🔗 Track your package](${trackUrl})`);
     }
 
-    if (order.shipping_address) {
-      const a = order.shipping_address;
-      lines.push(`- **Delivering to:** ${a.city}, ${a.province}`);
+    // Shipping address
+    const addr = order.shippingAddress || order.shipping_address;
+    if (addr) {
+      const city = addr.city;
+      const province = addr.province || addr.provinceCode || addr.province_code;
+      if (city || province) lines.push(`- **Delivering to:** ${[city, province].filter(Boolean).join(', ')}`);
     }
+
+    // Total price
+    const total = order.totalPrice || order.total_price ||
+      order.currentTotalPrice?.amount || order.currentTotalPrice;
+    const currency = order.currencyCode || order.currency ||
+      order.currentTotalPrice?.currencyCode || '';
+    if (total) lines.push(`- **Total:** ${currency} ${total}`);
 
     lines.push('\n[Related: What is the return policy?]');
     lines.push('[Related: I want to cancel this order]');
     lines.push('[Related: Contact support about this order]');
 
     return lines.join('\n');
+  } catch (e) {
+    console.warn('[NLP] formatOrderResponse error:', e.message);
+    return `📦 **Order Status:**\n\nApna Order ID share karein aur main exact status check kar deta hoon.\n\n[Related: Contact support]\n[Related: Return policy kya hai?]`;
+  }
+}
+
+/**
+ * Extract a readable policy section from MCP policy tool response.
+ * Searches for matching keywords to pick the right policy block.
+ * @param {string|Object} data - Raw tool response text or object
+ * @param {string[]} keywords - Keywords to look for (e.g. ['shipping', 'delivery'])
+ * @returns {string|null} Cleaned policy text or null
+ */
+function extractPolicyText(data, keywords) {
+  try {
+    const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+
+    // Flatten all possible policy fields into a list of { title, body } pairs
+    const candidates = [];
+    const addCandidate = (obj) => {
+      if (!obj || typeof obj !== 'object') return;
+      const body = obj.body || obj.content || obj.text || obj.description || '';
+      const title = obj.title || obj.name || '';
+      if (body) candidates.push({ title, body });
+    };
+
+    // Known Shopify policy field names (camelCase + snake_case)
+    const policyKeys = [
+      'shippingPolicy', 'shipping_policy',
+      'refundPolicy', 'refund_policy',
+      'returnPolicy', 'return_policy',
+      'privacyPolicy', 'privacy_policy',
+      'termsOfService', 'terms_of_service',
+      'legalNotice', 'legal_notice',
+    ];
+    for (const key of policyKeys) {
+      if (parsed[key]) addCandidate(parsed[key]);
+    }
+
+    // Top-level body/text (when tool returns the policy directly)
+    if (parsed.body || parsed.text || parsed.content) addCandidate(parsed);
+
+    // Array of policies
+    if (Array.isArray(parsed)) parsed.forEach(addCandidate);
+    if (Array.isArray(parsed.policies)) parsed.policies.forEach(addCandidate);
+
+    // Score candidates by keyword overlap
+    const kwLower = keywords.map(k => k.toLowerCase());
+    let best = null;
+    let bestScore = 0;
+
+    for (const c of candidates) {
+      const combined = (c.title + ' ' + c.body).toLowerCase();
+      const score = kwLower.filter(k => combined.includes(k)).length;
+      if (score > bestScore) { bestScore = score; best = c; }
+    }
+
+    // Fallback: first candidate if nothing keyword-matched
+    if (!best && candidates.length > 0) best = candidates[0];
+
+    if (!best) return null;
+
+    // Strip HTML tags and trim
+    const clean = best.body.replace(/<[^>]*>/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    // Truncate if very long (keep first ~800 chars)
+    return clean.length > 800 ? clean.slice(0, 800) + '…' : clean;
   } catch {
-    return `📦 **Order Found!**\n\nMain aapka order status check kar raha hoon. Kripya thoda intezaar karein.\n\n[Related: What is the expected delivery?]\n[Related: Contact support]\n[Related: Return policy kya hai?]`;
+    return null;
+  }
+}
+
+/**
+ * Extract contact details from MCP shop/store info response.
+ * @param {string|Object} data - Raw tool response
+ * @returns {string|null} Formatted contact string or null
+ */
+function extractShopContact(data) {
+  try {
+    const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+    const shop = parsed.shop || parsed.store || parsed;
+
+    const lines = [];
+    const email = shop.email || shop.contactEmail || shop.contact_email;
+    const phone = shop.phone || shop.phoneNumber || shop.phone_number;
+    const name = shop.name || shop.storeName || shop.store_name;
+    const url = shop.url || shop.domain || shop.primaryDomain?.url;
+
+    if (name) lines.push(`**${name}**`);
+    if (email) lines.push(`- 📧 Email: [${email}](mailto:${email})`);
+    if (phone) lines.push(`- 📞 Phone: ${phone}`);
+    if (url) lines.push(`- 🌐 Website: [${url}](https://${url.replace(/^https?:\/\//, '')})`);
+
+    return lines.length > 0 ? lines.join('\n') : null;
+  } catch {
+    return null;
   }
 }
 
@@ -311,37 +494,49 @@ function formatOrderResponse(orderData) {
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * Builds the correct tool name and arguments based on detected intent
+ * Builds the correct MCP tool call based on detected intent.
+ * Every intent that can benefit from real store data gets a tool query.
+ * resolveToolName() in chat.jsx will fuzzy-match to the actual MCP tool name.
  */
 export function buildToolQuery(intent, entities) {
   const { orderId, budget, color, size, keywords } = entities;
 
-  if (intent === 'order_tracking' && orderId) {
-    return { toolName: 'get_order', args: { order_id: orderId } };
+  // ── Order tracking ────────────────────────────────────────────
+  if (intent === 'order_tracking') {
+    if (orderId) {
+      return { toolName: 'get_order', args: { order_id: orderId } };
+    }
+    // No order ID yet — fetch the customer's recent orders list
+    return { toolName: 'get_orders', args: {} };
   }
 
-  if (['product_search', 'budget', 'premium'].includes(intent)) {
-    let queryStr = [
-      color,
-      size,
-      ...keywords.filter(k => k.length > 3).slice(0, 4)
-    ].filter(Boolean).join(' ');
+  // ── Product catalog search (product_search, budget, premium, discount) ─
+  if (['product_search', 'budget', 'premium', 'discount'].includes(intent)) {
+    let queryStr = [color, size, ...keywords.filter(k => k.length > 3).slice(0, 4)]
+      .filter(Boolean).join(' ');
 
     if (intent === 'budget' && budget) {
       queryStr += ` under ${budget}`;
     } else if (intent === 'premium') {
       queryStr = `premium ${queryStr}`;
+    } else if (intent === 'discount') {
+      queryStr = queryStr ? `${queryStr} sale` : 'sale offer discount';
     }
 
-    return {
-      toolName: 'search_shop_catalog',
-      args: {
-        query: queryStr || 'products'
-      }
-    };
+    return { toolName: 'search_shop_catalog', args: { query: queryStr || 'products' } };
   }
 
-  return null; // No tool call needed for this intent
+  // ── Store policies (shipping, return, refund, cancel) ─────────
+  if (['shipping', 'return', 'refund', 'cancel'].includes(intent)) {
+    return { toolName: 'read_shop_policies', args: {} };
+  }
+
+  // ── Support / contact info ────────────────────────────────────
+  if (['support', 'payment'].includes(intent)) {
+    return { toolName: 'get_shop', args: {} };
+  }
+
+  return null; // greeting, thanks, cart — no tool call needed
 }
 
 // ═══════════════════════════════════════════════════════════════

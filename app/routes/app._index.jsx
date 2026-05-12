@@ -1,54 +1,63 @@
+import React from "react";
+
 export default function Index() {
   return (
-    <s-page>
-      <ui-title-bar title="Shop chat agent reference app" />
+    <div className="premium-layout">
+      <div className="content-wrapper">
+        <header className="page-header">
+          <h1 className="gradient-text">Welcome, Commander</h1>
+          <p className="sub-header">Control center for your AI-Powered Store Agent.</p>
+        </header>
 
-      <s-section>
-        <s-stack gap="base">
-          <s-heading>Congrats on creating a new Shopify app 🎉</s-heading>
-          <s-paragraph>
-            This is a reference app that adds a chat agent on your storefront,
-            which is powered via claude and can connect shopify mcp platform.
-          </s-paragraph>
-        </s-stack>
-      </s-section>
+        <div className="grid-dashboard">
+          <div className="glass-card">
+            <div className="card-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            </div>
+            <h3 className="card-title">Live Chat Status</h3>
+            <p className="card-desc">AI is currently managing customer requests autonomously.</p>
+            <div className="stat-row">
+              <span className="stat-val">Active</span>
+              <span className="stat-badge">Online</span>
+            </div>
+          </div>
 
-      <s-section heading="App template specs" slot="aside">
-        <s-paragraph>
-          <s-text>Framework: </s-text>
-          <s-link href="https://reactrouter.com/" target="_blank">
-            React Router
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Interface: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/app-home/using-polaris-components"
-            target="_blank"
-          >
-            Polaris web components
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>API: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            GraphQL
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Database: </s-text>
-          <s-link href="https://www.prisma.io/" target="_blank">
-            Prisma
-          </s-link>
-        </s-paragraph>
-      </s-section>
+          <div className="glass-card">
+            <div className="card-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>
+            </div>
+            <h3 className="card-title">Resolution Rate</h3>
+            <p className="card-desc">Percentage of resolved queries by our NLP core this week.</p>
+            <div className="stat-row">
+              <span className="stat-val">94.8%</span>
+              <span className="stat-badge">+2.4%</span>
+            </div>
+          </div>
 
-      <s-section heading="Next steps" slot="aside">
-        <s-text>Enable the theme extension in your theme editor.</s-text>
-      </s-section>
-    </s-page>
+          <div className="glass-card">
+            <div className="card-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            </div>
+            <h3 className="card-title">Avg. Response Time</h3>
+            <p className="card-desc">Time for AI agent to formulate optimal responses.</p>
+            <div className="stat-row">
+              <span className="stat-val">0.4s</span>
+              <span className="stat-badge">Optimal</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="glass-card" style={{ padding: '3rem' }}>
+          <h2 style={{ fontSize: '2rem', marginBottom: '1rem' }}>Supercharge conversions today</h2>
+          <p style={{ color: '#94a3b8', maxWidth: '600px', marginBottom: '2rem', fontSize: '1.1rem' }}>
+            Upgrade your customer engagement flow by exploring detailed analytics or connecting new data pipelines to improve recommendations.
+          </p>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button className="premium-button">Launch Control Console</button>
+            <button className="premium-button outline">View Logs</button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
