@@ -2,6 +2,7 @@
  * Chat API Route
  * Handles chat interactions with Claude API and tools
  */
+import 'dotenv/config';
 import MCPClient from "../mcp-client";
 import { saveMessage, getConversationHistory, storeCustomerAccountUrls, getCustomerAccountUrls as getCustomerAccountUrlsFromDb } from "../db.server";
 import AppConfig from "../services/config.server";
@@ -42,6 +43,13 @@ export async function loader({ request }) {
  * React Router action function for handling POST requests
  */
 export async function action({ request }) {
+  // Handle OPTIONS requests (CORS preflight) in case it hits the action path
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: getCorsHeaders(request)
+    });
+  }
   return handleChatRequest(request);
 }
 
@@ -120,7 +128,8 @@ async function handleChatSession({
   stream
 }) {
   // Initialize services
-  const claudeService = createClaudeService();
+  console.log("Using Claude API Key found in process.env:", process.env.CLAUDE_API_KEY ? `${process.env.CLAUDE_API_KEY.substring(0, 12)}...` : "MISSING");
+  const claudeService = createClaudeService(process.env.CLAUDE_API_KEY);
   const toolService = createToolService();
 
   // Initialize MCP client
@@ -334,6 +343,7 @@ function getCorsHeaders(request) {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": requestHeaders,
     "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Private-Network": "true",
     "Access-Control-Max-Age": "86400" // 24 hours
   };
 }
@@ -353,6 +363,7 @@ function getSseHeaders(request) {
     "Access-Control-Allow-Credentials": "true",
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET,OPTIONS,POST",
-    "Access-Control-Allow-Headers": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version"
+    "Access-Control-Allow-Headers": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version",
+    "Access-Control-Allow-Private-Network": "true"
   };
 }

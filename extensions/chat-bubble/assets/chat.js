@@ -481,7 +481,7 @@
             prompt_type: promptType
           });
 
-          const streamUrl = 'https://localhost:3458/chat';
+          const streamUrl = '/apps/boat-chat/chat';
           const shopId = window.shopId;
 
           const response = await fetch(streamUrl, {
@@ -570,9 +570,10 @@
             break;
 
           case 'error':
-            console.error('Stream error:', data.error);
+            console.error('Stream error:', data.error, data.details);
             ShopAIChat.UI.removeTypingIndicator();
-            currentMessageElement.textContent = "Sorry, I couldn't process your request. Please try again later.";
+            const errorMessage = data.details ? `${data.error}: ${data.details}` : (data.error || "Sorry, I couldn't process your request. Please try again later.");
+            currentMessageElement.textContent = errorMessage;
             break;
 
           case 'rate_limit_exceeded':
@@ -632,7 +633,7 @@
           messagesContainer.appendChild(loadingMessage);
 
           // Fetch history from the server
-          const historyUrl = `https://localhost:3458/chat?history=true&conversation_id=${encodeURIComponent(conversationId)}`;
+          const historyUrl = `/apps/boat-chat/chat?history=true&conversation_id=${encodeURIComponent(conversationId)}`;
           console.log('Fetching history from:', historyUrl);
 
           const response = await fetch(historyUrl, {
@@ -781,7 +782,7 @@
           attemptCount++;
 
           try {
-            const tokenUrl = 'https://localhost:3458/auth/token-status?conversation_id=' +
+            const tokenUrl = '/apps/boat-chat/auth/token-status?conversation_id=' +
               encodeURIComponent(conversationId);
             const response = await fetch(tokenUrl);
 

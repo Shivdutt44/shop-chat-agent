@@ -41,6 +41,9 @@ export default defineConfig({
     cors: {
       preflightContinue: true,
     },
+    headers: {
+      "Access-Control-Allow-Private-Network": "true",
+    },
     port: Number(process.env.PORT || 3000),
     hmr: hmrConfig,
     fs: {
