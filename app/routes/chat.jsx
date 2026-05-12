@@ -7,7 +7,7 @@ import MCPClient from "../mcp-client";
 import { saveMessage, getConversationHistory, storeCustomerAccountUrls, getCustomerAccountUrls as getCustomerAccountUrlsFromDb } from "../db.server";
 import AppConfig from "../services/config.server";
 import { createSseStream } from "../services/streaming.server";
-import { createClaudeService } from "../services/claude.server";
+import { classifyIntent, generateResponse, buildToolQuery, streamText } from "../services/nlp.server";
 import { createToolService } from "../services/tool.server";
 
 
@@ -127,163 +127,86 @@ async function handleChatSession({
   promptType,
   stream
 }) {
-  // Initialize services
-  console.log("Using Claude API Key found in process.env:", process.env.CLAUDE_API_KEY ? `${process.env.CLAUDE_API_KEY.substring(0, 12)}...` : "MISSING");
-  const claudeService = createClaudeService(process.env.CLAUDE_API_KEY);
   const toolService = createToolService();
 
-  // Initialize MCP client
+  // Initialize MCP client for tool access
   const shopId = request.headers.get("X-Shopify-Shop-Id");
   const shopDomain = request.headers.get("Origin");
-  const { mcpApiUrl } = await getCustomerAccountUrls(shopDomain, conversationId);
+  const { mcpApiUrl } = await getCustomerAccountUrls(shopDomain, conversationId) || {};
 
-  const mcpClient = new MCPClient(
-    shopDomain,
-    conversationId,
-    shopId,
-    mcpApiUrl,
-  );
+  const mcpClient = new MCPClient(shopDomain, conversationId, shopId, mcpApiUrl);
 
   // Send conversation ID to client
   stream.sendMessage({ type: 'id', conversation_id: conversationId });
 
-    // Connect to MCP servers and get available tools
-    let storefrontMcpTools = [], customerMcpTools = [];
+  // Connect MCP tools (best-effort)
+  try {
+    await mcpClient.connectToStorefrontServer();
+    await mcpClient.connectToCustomerServer();
+  } catch (err) {
+    console.warn('MCP connection failed, continuing without tools:', err.message);
+  }
 
+  // ── Step 1: Save user message ──────────────────────────────────
+  await saveMessage(conversationId, 'user', userMessage);
+
+  // ── Step 2: NLP Intent Classification ─────────────────────────
+  const { intent, entities } = classifyIntent(userMessage);
+  console.log(`[NLP] Intent: ${intent} | Entities:`, entities);
+  
+  // Debug: write available tools to a file
+  import('fs').then(fs => {
+    fs.writeFileSync('tools_debug.json', JSON.stringify({
+      storefrontTools: mcpClient.storefrontTools,
+      customerTools: mcpClient.customerTools
+    }, null, 2));
+  });
+
+  // ── Step 3: Tool Call (if needed) ──────────────────────────────
+  let toolData = null;
+  const productsToDisplay = [];
+  const toolQuery = buildToolQuery(intent, entities);
+
+  if (toolQuery && mcpClient.tools && mcpClient.tools.length > 0) {
     try {
-      storefrontMcpTools = await mcpClient.connectToStorefrontServer();
-      customerMcpTools = await mcpClient.connectToCustomerServer();
+      stream.sendMessage({ type: 'tool_use', tool_use_message: `Searching: ${toolQuery.toolName}` });
+      const toolResponse = await mcpClient.callTool(toolQuery.toolName, toolQuery.args);
 
-      console.log(`Connected to MCP with ${storefrontMcpTools.length} tools`);
-      console.log(`Connected to customer MCP with ${customerMcpTools.length} tools`);
-    } catch (error) {
-      console.warn('Failed to connect to MCP servers, continuing without tools:', error.message);
-    }
-
-    // Prepare conversation state
-    let conversationHistory = [];
-    let productsToDisplay = [];
-
-    // Save user message to the database
-    await saveMessage(conversationId, 'user', userMessage);
-
-    // Fetch all messages from the database for this conversation
-    const dbMessages = await getConversationHistory(conversationId);
-
-    // Format messages for Claude API
-    conversationHistory = dbMessages.map(dbMessage => {
-      let content;
-      try {
-        content = JSON.parse(dbMessage.content);
-      } catch (e) {
-        content = dbMessage.content;
-      }
-      return {
-        role: dbMessage.role,
-        content
-      };
-    });
-
-    // Execute the conversation stream
-    let finalMessage = { role: 'user', content: userMessage };
-
-    while (finalMessage.stop_reason !== "end_turn") {
-      finalMessage = await claudeService.streamConversation(
-        {
-          messages: conversationHistory,
-          promptType,
-          tools: mcpClient.tools
-        },
-        {
-          // Handle text chunks
-          onText: (textDelta) => {
-            stream.sendMessage({
-              type: 'chunk',
-              chunk: textDelta
-            });
-          },
-
-          // Handle complete messages
-          onMessage: (message) => {
-            conversationHistory.push({
-              role: message.role,
-              content: message.content
-            });
-
-            saveMessage(conversationId, message.role, JSON.stringify(message.content))
-              .catch((error) => {
-                console.error("Error saving message to database:", error);
-              });
-
-            // Send a completion message
-            stream.sendMessage({ type: 'message_complete' });
-          },
-
-          // Handle tool use requests
-          onToolUse: async (content) => {
-            const toolName = content.name;
-            const toolArgs = content.input;
-            const toolUseId = content.id;
-
-            const toolUseMessage = `Calling tool: ${toolName} with arguments: ${JSON.stringify(toolArgs)}`;
-
-            stream.sendMessage({
-              type: 'tool_use',
-              tool_use_message: toolUseMessage
-            });
-
-            // Call the tool
-            const toolUseResponse = await mcpClient.callTool(toolName, toolArgs);
-
-            // Handle tool response based on success/error
-            if (toolUseResponse.error) {
-              await toolService.handleToolError(
-                toolUseResponse,
-                toolName,
-                toolUseId,
-                conversationHistory,
-                stream.sendMessage,
-                conversationId
-              );
-            } else {
-              await toolService.handleToolSuccess(
-                toolUseResponse,
-                toolName,
-                toolUseId,
-                conversationHistory,
-                productsToDisplay,
-                conversationId
-              );
-            }
-
-            // Signal new message to client
-            stream.sendMessage({ type: 'new_message' });
-          },
-
-          // Handle content block completion
-          onContentBlock: (contentBlock) => {
-            if (contentBlock.type === 'text') {
-              stream.sendMessage({
-                type: 'content_block_complete',
-                content_block: contentBlock
-              });
-            }
-          }
+      if (!toolResponse.error) {
+        toolData = toolResponse.content?.[0]?.text || null;
+        // Extract products if it's a catalog search
+        if (toolQuery.toolName === AppConfig.tools.productSearchName) {
+          const processed = toolService.processProductSearchResult(toolResponse);
+          productsToDisplay.push(...processed);
         }
-      );
+        stream.sendMessage({ type: 'new_message' });
+      }
+    } catch (err) {
+      console.warn('[NLP] Tool call failed:', err.message);
     }
+  }
 
-    // Signal end of turn
-    stream.sendMessage({ type: 'end_turn' });
+  // ── Step 4: Generate Response ───────────────────────────────────
+  const responseText = generateResponse(intent, entities, toolData);
 
-    // Send product results if available
-    if (productsToDisplay.length > 0) {
-      stream.sendMessage({
-        type: 'product_results',
-        products: productsToDisplay
-      });
-    }
+  // ── Step 5: Stream Response word-by-word ────────────────────────
+  await streamText(responseText, (chunk) => {
+    stream.sendMessage({ type: 'chunk', chunk });
+  });
+
+  // ── Step 6: Save assistant message ─────────────────────────────
+  await saveMessage(conversationId, 'assistant', responseText);
+
+  // ── Step 7: Signal completion ───────────────────────────────────
+  stream.sendMessage({ type: 'message_complete' });
+  stream.sendMessage({ type: 'end_turn' });
+
+  // ── Step 8: Send product cards if any ──────────────────────────
+  if (productsToDisplay.length > 0) {
+    stream.sendMessage({ type: 'product_results', products: productsToDisplay });
+  }
 }
+
 
 /**
  * Get the customer MCP API URL for a shop

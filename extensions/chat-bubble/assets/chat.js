@@ -373,6 +373,16 @@
         // Process the text with various Markdown features
         let processedText = rawText;
 
+        // Extract related questions and remove them from text
+        let relatedQuestions = [];
+        const relatedRegex = /\[Related:\s*(.*?)\]/gi;
+        processedText = processedText.replace(relatedRegex, (match, question) => {
+          if (question && question.trim()) {
+            relatedQuestions.push(question.trim());
+          }
+          return ''; // Remove from display text
+        });
+
         // Process Markdown links
         const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
         processedText = processedText.replace(markdownLinkRegex, (match, text, url) => {
@@ -398,6 +408,30 @@
 
         // Apply the formatted HTML
         element.innerHTML = processedText;
+
+        // Append suggestion chips if any were found
+        if (relatedQuestions.length > 0) {
+          const chipsContainer = document.createElement('div');
+          chipsContainer.classList.add('shop-ai-suggestion-chips');
+          
+          relatedQuestions.forEach(question => {
+            const chip = document.createElement('button');
+            chip.classList.add('shop-ai-suggestion-chip');
+            chip.textContent = question;
+            chip.addEventListener('click', function() {
+              const input = document.querySelector('.shop-ai-chat-input input');
+              const sendBtn = document.querySelector('.shop-ai-chat-send');
+              if (input && sendBtn) {
+                input.value = question;
+                sendBtn.click();
+              }
+            });
+            chipsContainer.appendChild(chip);
+          });
+          
+          element.appendChild(chipsContainer);
+          ShopAIChat.UI.scrollToBottom();
+        }
       },
 
       /**
