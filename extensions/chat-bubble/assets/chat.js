@@ -199,7 +199,12 @@
         // Add a header for the product results
         const header = document.createElement('div');
         header.classList.add('shop-ai-product-header');
-        header.innerHTML = '<h4>Top Matching Products</h4>';
+        header.innerHTML = `
+          <div class="shop-ai-product-header-inner">
+            <span class="shop-ai-product-header-icon">🛍️</span>
+            <h4>Matching Products</h4>
+            <span class="shop-ai-product-count">${products ? products.length : 0} found</span>
+          </div>`;
         productSection.appendChild(header);
 
         // Create the product grid container
@@ -208,9 +213,9 @@
         productSection.appendChild(productsContainer);
 
         if (!products || !Array.isArray(products) || products.length === 0) {
-          const noProductsMessage = document.createElement('p');
-          noProductsMessage.textContent = "No products found";
-          noProductsMessage.style.padding = "10px";
+          const noProductsMessage = document.createElement('div');
+          noProductsMessage.classList.add('shop-ai-no-products');
+          noProductsMessage.innerHTML = '<span>😕</span><p>No products found</p>';
           productsContainer.appendChild(noProductsMessage);
         } else {
           products.forEach(product => {
@@ -835,69 +840,111 @@
         const card = document.createElement('div');
         card.classList.add('shop-ai-product-card');
 
-        // Create image container
-        const imageContainer = document.createElement('div');
-        imageContainer.classList.add('shop-ai-product-image');
+        // --- Image Section ---
+        const imageWrapper = document.createElement('div');
+        imageWrapper.classList.add('shop-ai-product-image');
 
-        // Add product image or placeholder
+        // Shimmer placeholder shown while image loads
+        const shimmer = document.createElement('div');
+        shimmer.classList.add('shop-ai-img-shimmer');
+        imageWrapper.appendChild(shimmer);
+
         const image = document.createElement('img');
-        image.src = product.image_url || 'https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-image_large.png';
-        image.alt = product.title;
-        image.onerror = function() {
-          // If image fails to load, use a fallback placeholder
-          this.src = 'https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-image_large.png';
-        };
-        imageContainer.appendChild(image);
-        card.appendChild(imageContainer);
+        image.alt = product.title || 'Product image';
+        image.loading = 'lazy';
+        image.style.opacity = '0';
+        image.style.transition = 'opacity 0.3s ease';
 
-        // Add product info
+        const imgSrc = product.image_url || '';
+        if (imgSrc) {
+          image.src = imgSrc;
+        } else {
+          // Use SVG placeholder if no image URL
+          image.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='140' viewBox='0 0 200 140'%3E%3Crect width='200' height='140' fill='%23f0f0f0'/%3E%3Ctext x='50%25' y='50%25' font-size='32' text-anchor='middle' dominant-baseline='middle' fill='%23ccc'%3E🛍️%3C/text%3E%3C/svg%3E`;
+        }
+
+        image.onload = function() {
+          shimmer.style.display = 'none';
+          image.style.opacity = '1';
+        };
+        image.onerror = function() {
+          shimmer.style.display = 'none';
+          this.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='140' viewBox='0 0 200 140'%3E%3Crect width='200' height='140' fill='%23f0f0f0'/%3E%3Ctext x='50%25' y='50%25' font-size='32' text-anchor='middle' dominant-baseline='middle' fill='%23ccc'%3E🛍️%3C/text%3E%3C/svg%3E`;
+          this.style.opacity = '1';
+        };
+
+        imageWrapper.appendChild(image);
+
+        // Quick-view overlay on hover
+        if (product.url) {
+          const overlay = document.createElement('a');
+          overlay.classList.add('shop-ai-product-overlay');
+          overlay.href = product.url;
+          overlay.target = '_blank';
+          overlay.rel = 'noopener noreferrer';
+          overlay.innerHTML = '<span>👁 View</span>';
+          imageWrapper.appendChild(overlay);
+        }
+
+        card.appendChild(imageWrapper);
+
+        // --- Info Section ---
         const info = document.createElement('div');
         info.classList.add('shop-ai-product-info');
 
-        // Add product title
-        const title = document.createElement('h3');
+        // Product title
+        const title = document.createElement('p');
         title.classList.add('shop-ai-product-title');
-        title.textContent = product.title;
-
-        // If product has a URL, make the title a link
+        title.title = product.title; // tooltip for truncated titles
         if (product.url) {
           const titleLink = document.createElement('a');
           titleLink.href = product.url;
           titleLink.target = '_blank';
-          titleLink.textContent = product.title;
-          title.textContent = '';
+          titleLink.rel = 'noopener noreferrer';
+          titleLink.textContent = product.title || 'Product';
           title.appendChild(titleLink);
+        } else {
+          title.textContent = product.title || 'Product';
         }
-
         info.appendChild(title);
 
-        // Add product price
+        // Product price
         const price = document.createElement('p');
         price.classList.add('shop-ai-product-price');
-        price.textContent = product.price;
+        price.textContent = product.price || '';
         info.appendChild(price);
 
-        // Add add-to-cart button
-        const button = document.createElement('button');
-        button.classList.add('shop-ai-add-to-cart');
-        button.textContent = 'Add to Cart';
-        button.dataset.productId = product.id;
+        // Action buttons row
+        const actions = document.createElement('div');
+        actions.classList.add('shop-ai-product-actions');
 
-        // Add click handler for the button
-        button.addEventListener('click', function() {
-          // Send message to add this product to cart
+        // Add to Cart button
+        const cartButton = document.createElement('button');
+        cartButton.classList.add('shop-ai-add-to-cart');
+        cartButton.innerHTML = '🛒 Add';
+        cartButton.dataset.productId = product.id;
+        cartButton.addEventListener('click', function() {
           const input = document.querySelector('.shop-ai-chat-input input');
           if (input) {
             input.value = `Add ${product.title} to my cart`;
-            // Trigger a click on the send button
             const sendButton = document.querySelector('.shop-ai-chat-send');
-            if (sendButton) {
-              sendButton.click();
-            }
+            if (sendButton) sendButton.click();
           }
         });
+        actions.appendChild(cartButton);
 
-        info.appendChild(button);
+        // View Product link button
+        if (product.url) {
+          const viewButton = document.createElement('a');
+          viewButton.classList.add('shop-ai-view-product');
+          viewButton.href = product.url;
+          viewButton.target = '_blank';
+          viewButton.rel = 'noopener noreferrer';
+          viewButton.textContent = 'View';
+          actions.appendChild(viewButton);
+        }
+
+        info.appendChild(actions);
         card.appendChild(info);
 
         return card;
