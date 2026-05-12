@@ -196,14 +196,19 @@ export function classifyIntent(message) {
  * Generates a response based on intent + REAL tool data.
  * When toolData is available it always wins — no hardcoded store-specific values.
  * When toolData is null an honest, generic message is shown instead.
+ * @param {Object} settings - Dynamic shop settings
  */
-export function generateResponse(intent, entities, toolData = null) {
+export function generateResponse(intent, entities, toolData = null, settings = {}) {
   const { budget, color, size, keywords } = entities;
+  
+  // Dynamic agent details
+  const agentName = settings.agentName || "AI Assistant";
+  const customWelcome = settings.welcomeMessage || `👋 **Namaste!** Main aapki kaise madad kar sakta hoon?`;
 
   switch (intent) {
     // ── Static intents (no store-specific data needed) ─────────────
     case 'greeting':
-      return `👋 **Namaste!** Welcome!\n\nMain aapki kaise madad kar sakta hoon?\n\n[Related: Show me products]\n[Related: Track my order]\n[Related: What is the return policy?]`;
+      return `${customWelcome}\n\n[Related: Show me products]\n[Related: Track my order]\n[Related: What is the return policy?]`;
 
     case 'thanks':
       return `😊 **You're welcome!** Khushi hui aapki madad karke!\n\nKoi aur sawaal ho toh zaroor poochein.\n\n[Related: Show me more products]\n[Related: Track my order]`;

@@ -1,6 +1,35 @@
 import React from "react";
+import { Form, useActionData, useNavigation } from "react-router";
+import { authenticate } from "../shopify.server";
+import prisma from "../db.server";
+
+export const action = async ({ request }) => {
+  const { session } = await authenticate.admin(request);
+  const shop = session.shop;
+  const formData = await request.formData();
+  
+  const subject = formData.get("subject");
+  const priority = formData.get("priority");
+  const message = formData.get("message");
+
+  try {
+    const id = `tkt_${Date.now()}`;
+    const now = new Date().toISOString();
+    await prisma.$executeRaw`
+      INSERT INTO SupportTicket (id, shop, subject, priority, message, status, createdAt)
+      VALUES (${id}, ${shop}, ${subject}, ${priority}, ${message}, 'OPEN', ${now})
+    `;
+    return { success: true };
+  } catch (e) {
+    return { error: true, message: e.message };
+  }
+};
 
 export default function Support() {
+  const actionData = useActionData();
+  const navigation = useNavigation();
+  const isSubmitting = navigation.state === "submitting";
+
   return (
     <div className="premium-layout">
       <div className="content-wrapper" style={{ maxWidth: '1000px' }}>
@@ -9,37 +38,44 @@ export default function Support() {
           <p className="sub-header">Access system telemetry docs or engage standard query resolution channels.</p>
         </header>
 
+        {actionData?.success && (
+          <div style={{ background: 'rgba(16, 185, 129, 0.2)', border: '1px solid #10b981', color: '#34d399', padding: '1rem', borderRadius: '12px', marginBottom: '1.5rem' }}>
+            Payload Transmitted! Ticketing Node #{(Math.random() * 10000).toFixed(0)} has been initialized.
+          </div>
+        )}
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
           
           {/* Contact Form */}
-          <div className="glass-card">
+          <Form method="POST" className="glass-card">
             <h3 className="card-title">Open Direct Channel</h3>
             <p className="card-desc" style={{ marginBottom: '2rem' }}>Dispatch an encoded support ticket directly to our engineers.</p>
             
             <div className="form-group">
               <label className="form-label">Subject Node</label>
-              <input type="text" className="premium-input" placeholder="Brief summary of the issue" />
+              <input type="text" name="subject" className="premium-input" placeholder="Brief summary of the issue" required />
             </div>
             
             <div className="form-group">
               <label className="form-label">Priority Frequency</label>
-              <select className="premium-select">
-                <option>Low (Routine)</option>
-                <option>Medium (Urgent)</option>
-                <option>High (Critical / Operational Halt)</option>
+              <select name="priority" className="premium-select" defaultValue="Medium">
+                <option value="Low">Low (Routine)</option>
+                <option value="Medium">Medium (Urgent)</option>
+                <option value="High">High (Critical / Operational Halt)</option>
               </select>
             </div>
 
             <div className="form-group">
               <label className="form-label">Payload Data</label>
-              <textarea className="premium-textarea" rows="4" placeholder="Describe the issue context or desired output parameters..."></textarea>
+              <textarea name="message" className="premium-textarea" rows="4" placeholder="Describe the issue context or desired output parameters..." required></textarea>
             </div>
 
-            <button className="premium-button" style={{ width: '100%' }}>
+            <button type="submit" className="premium-button" style={{ width: '100%' }} disabled={isSubmitting}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '8px' }}><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-              Transmit Payload
+              {isSubmitting ? "Transmitting..." : "Transmit Payload"}
             </button>
-          </div>
+          </Form>
+
 
           {/* Helpful Resources */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>

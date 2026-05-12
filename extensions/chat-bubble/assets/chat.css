@@ -604,13 +604,15 @@
   /* Action buttons row */
   .shop-ai-product-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 5px;
     align-items: center;
+    margin-top: 4px;
   }
 
   .shop-ai-add-to-cart {
-    flex: 1;
-    padding: 6px 4px;
+    flex: 1 1 auto;
+    padding: 6px 6px;
     background: linear-gradient(135deg, #5046e4, #7b6ff0);
     color: white;
     border: none;
@@ -620,7 +622,9 @@
     cursor: pointer;
     transition: all 0.2s ease;
     white-space: nowrap;
-    letter-spacing: 0.2px;
+    letter-spacing: 0.1px;
+    min-width: 60px;
+    text-align: center;
   }
 
   .shop-ai-add-to-cart:hover {
@@ -633,11 +637,34 @@
     transform: scale(0.98);
   }
 
+  .shop-ai-buy-now {
+    flex: 1 1 auto;
+    padding: 6px 6px;
+    background: linear-gradient(135deg, #f97316, #fb923c);
+    color: white;
+    border: none;
+    border-radius: 7px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    letter-spacing: 0.1px;
+    min-width: 60px;
+    text-align: center;
+  }
+
+  .shop-ai-buy-now:hover {
+    background: linear-gradient(135deg, #ea580c, #f97316);
+    transform: scale(1.02);
+    box-shadow: 0 3px 8px rgba(249, 115, 22, 0.3);
+  }
+
   .shop-ai-view-product {
-    padding: 6px 8px;
+    padding: 6px 6px;
     background: transparent;
-    color: #5046e4;
-    border: 1.5px solid #5046e4;
+    color: #64748b;
+    border: 1px solid #cbd5e1;
     border-radius: 7px;
     font-size: 11px;
     font-weight: 600;
@@ -647,6 +674,9 @@
     white-space: nowrap;
     display: flex;
     align-items: center;
+    justify-content: center;
+    flex: 1 1 100%; /* full width on newline or next flex break */
+    margin-top: 2px;
   }
 
   .shop-ai-view-product:hover {

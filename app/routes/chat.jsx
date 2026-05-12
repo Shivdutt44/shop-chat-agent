@@ -6,6 +6,7 @@ import 'dotenv/config';
 import MCPClient from "../mcp-client";
 import { saveMessage, getConversationHistory, storeCustomerAccountUrls, getCustomerAccountUrls as getCustomerAccountUrlsFromDb } from "../db.server";
 import AppConfig from "../services/config.server";
+import prisma from "../db.server";
 import { createSseStream } from "../services/streaming.server";
 import { classifyIntent, generateResponse, buildToolQuery, streamText } from "../services/nlp.server";
 import { createToolService } from "../services/tool.server";
@@ -131,6 +132,27 @@ async function handleChatSession({
   // Initialize MCP client for tool access
   const shopId = request.headers.get("X-Shopify-Shop-Id");
   const shopDomain = request.headers.get("Origin");
+  const hostname = shopDomain ? new URL(shopDomain).hostname : null;
+
+  // Load dynamic settings via raw SQL to bypass Prisma node-module locks
+  let settings = null;
+  if (hostname) {
+    try {
+      const rows = await prisma.$queryRaw`SELECT * FROM AppSettings WHERE shop = ${hostname} LIMIT 1`;
+      if (rows && rows.length > 0) {
+        settings = rows[0];
+      }
+    } catch (e) {
+      console.warn("[Prisma] Failed to fetch settings via raw query", e.message);
+    }
+  }
+
+  // Default Fallback
+  const activeSettings = settings || {
+    agentName: "AI Assistant",
+    welcomeMessage: "Namaste! Main aapki kaise madad kar sakta hoon?"
+  };
+
   const customerUrls = await getCustomerAccountUrls(shopDomain, conversationId);
   const { mcpApiUrl } = customerUrls || {};
 
@@ -191,7 +213,7 @@ async function handleChatSession({
   }
 
   // ── Step 4: Generate Response ───────────────────────────────────
-  const responseText = generateResponse(intent, entities, toolData);
+  const responseText = generateResponse(intent, entities, toolData, activeSettings);
 
   // ── Step 5: Stream Response word-by-word ────────────────────────
   await streamText(responseText, (chunk) => {

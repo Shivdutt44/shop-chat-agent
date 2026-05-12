@@ -957,15 +957,77 @@
         cartButton.classList.add('shop-ai-add-to-cart');
         cartButton.innerHTML = '🛒 Add';
         cartButton.dataset.productId = product.id;
-        cartButton.addEventListener('click', function() {
-          const input = document.querySelector('.shop-ai-chat-input input');
-          if (input) {
-            input.value = `Add ${product.title} to my cart`;
-            const sendButton = document.querySelector('.shop-ai-chat-send');
-            if (sendButton) sendButton.click();
+        cartButton.dataset.variantId = product.variant_id;
+        
+        cartButton.addEventListener('click', async function(e) {
+          e.preventDefault();
+          const vId = product.variant_id;
+          if (!vId) {
+            // Fallback to typing if no variant found
+            const input = document.querySelector('.shop-ai-chat-input input');
+            if (input) {
+              input.value = `Add ${product.title} to my cart`;
+              const sendButton = document.querySelector('.shop-ai-chat-send');
+              if (sendButton) sendButton.click();
+            }
+            return;
+          }
+
+          // Direct Shopify Cart AJAX functionality
+          const originalText = cartButton.innerHTML;
+          cartButton.innerHTML = '⌛ Adding...';
+          cartButton.disabled = true;
+
+          try {
+            const rootPath = window.Shopify?.routes?.root || '/';
+            const fetchUrl = rootPath.endsWith('/') ? rootPath + 'cart/add.js' : rootPath + '/cart/add.js';
+
+            const response = await fetch(fetchUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                items: [{ id: Number(vId), quantity: 1 }]
+              })
+            });
+            
+            if (response.ok) {
+              cartButton.innerHTML = '✅ Loading Cart...';
+              cartButton.style.background = '#10b981';
+              
+              // Trigger instantaneous redirection to unified cart page
+              const cartUrl = rootPath.endsWith('/') ? rootPath + 'cart' : rootPath + '/cart';
+              window.location.href = cartUrl;
+            } else {
+              throw new Error("Add failed");
+            }
+          } catch (err) {
+             console.error("Shopify Cart Add failed:", err);
+             cartButton.innerHTML = '❌ Failed';
+             setTimeout(() => {
+               cartButton.innerHTML = originalText;
+               cartButton.disabled = false;
+             }, 2000);
           }
         });
         actions.appendChild(cartButton);
+
+        // Buy Now direct checkout button
+        const buyButton = document.createElement('button');
+        buyButton.classList.add('shop-ai-buy-now');
+        buyButton.innerHTML = '⚡ Buy';
+        
+        buyButton.addEventListener('click', function() {
+          const vId = product.variant_id;
+          if (vId) {
+            const rootPath = window.Shopify?.routes?.root || '/';
+            const checkoutBase = rootPath.endsWith('/') ? rootPath + 'cart/' : rootPath + '/cart/';
+            // Shopify standard Direct Checkout route format: /cart/VARIANT_ID:1
+            window.location.href = checkoutBase + vId + ':1';
+          } else if (product.url) {
+             window.location.href = product.url;
+          }
+        });
+        actions.appendChild(buyButton);
 
         // View Product link button
         if (product.url) {

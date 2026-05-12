@@ -204,14 +204,24 @@ export function createToolService() {
       (product.descriptionHtml ? product.descriptionHtml.replace(/<[^>]*>/g, '').trim() : '') ||
       '';
 
+    // Variant ID: Critical for direct Cart AJAX operations
+    const rawVariant = product.variants?.nodes?.[0] || product.variants?.[0];
+    let variantId = '';
+    if (rawVariant && rawVariant.id) {
+      // GID Format: gid://shopify/ProductVariant/12345678
+      variantId = String(rawVariant.id).split('/').pop() || '';
+    }
+
     return {
       id: product.product_id || product.id || `product-${Math.random().toString(36).substring(7)}`,
+      variant_id: variantId,
       title: product.title || 'Product',
       price: extractPrice(product),
       image_url: imageUrl,
       description: description,
       url: productUrl
     };
+
   };
 
   /**
