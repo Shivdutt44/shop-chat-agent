@@ -199,7 +199,12 @@
         // Add a header for the product results
         const header = document.createElement('div');
         header.classList.add('shop-ai-product-header');
-        header.innerHTML = '<h4>Top Matching Products</h4>';
+        header.innerHTML = `
+          <div class="shop-ai-product-header-inner">
+            <span class="shop-ai-product-header-icon">🛍️</span>
+            <h4>Matching Products</h4>
+            <span class="shop-ai-product-count">${products ? products.length : 0} found</span>
+          </div>`;
         productSection.appendChild(header);
 
         // Create the product grid container
@@ -208,9 +213,9 @@
         productSection.appendChild(productsContainer);
 
         if (!products || !Array.isArray(products) || products.length === 0) {
-          const noProductsMessage = document.createElement('p');
-          noProductsMessage.textContent = "No products found";
-          noProductsMessage.style.padding = "10px";
+          const noProductsMessage = document.createElement('div');
+          noProductsMessage.classList.add('shop-ai-no-products');
+          noProductsMessage.innerHTML = '<span>😕</span><p>No products found</p>';
           productsContainer.appendChild(noProductsMessage);
         } else {
           products.forEach(product => {
@@ -368,6 +373,16 @@
         // Process the text with various Markdown features
         let processedText = rawText;
 
+        // Extract related questions and remove them from text
+        let relatedQuestions = [];
+        const relatedRegex = /\[Related:\s*(.*?)\]/gi;
+        processedText = processedText.replace(relatedRegex, (match, question) => {
+          if (question && question.trim()) {
+            relatedQuestions.push(question.trim());
+          }
+          return ''; // Remove from display text
+        });
+
         // Process Markdown links
         const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
         processedText = processedText.replace(markdownLinkRegex, (match, text, url) => {
@@ -393,6 +408,30 @@
 
         // Apply the formatted HTML
         element.innerHTML = processedText;
+
+        // Append suggestion chips if any were found
+        if (relatedQuestions.length > 0) {
+          const chipsContainer = document.createElement('div');
+          chipsContainer.classList.add('shop-ai-suggestion-chips');
+          
+          relatedQuestions.forEach(question => {
+            const chip = document.createElement('button');
+            chip.classList.add('shop-ai-suggestion-chip');
+            chip.textContent = question;
+            chip.addEventListener('click', function() {
+              const input = document.querySelector('.shop-ai-chat-input input');
+              const sendBtn = document.querySelector('.shop-ai-chat-send');
+              if (input && sendBtn) {
+                input.value = question;
+                sendBtn.click();
+              }
+            });
+            chipsContainer.appendChild(chip);
+          });
+          
+          element.appendChild(chipsContainer);
+          ShopAIChat.UI.scrollToBottom();
+        }
       },
 
       /**
@@ -411,7 +450,7 @@
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
           const unorderedMatch = line.match(/^\s*([-*])\s+(.*)/);
-          const orderedMatch = line.match(/^\s*(\d+)[\.)]\s+(.*)/);
+          const orderedMatch = line.match(/^\s*(\d+)[.)]\s+(.*)/);
 
           if (unorderedMatch) {
             if (currentList !== 'ul') {
@@ -481,7 +520,7 @@
             prompt_type: promptType
           });
 
-          const streamUrl = 'https://localhost:3458/chat';
+          const streamUrl = '/apps/boat-chat/chat';
           const shopId = window.shopId;
 
           const response = await fetch(streamUrl, {
@@ -507,6 +546,7 @@
           currentMessageElement = messageElement;
 
           // Process the stream
+          // eslint-disable-next-line no-constant-condition
           while (true) {
             const { value, done } = await reader.read();
             if (done) break;
@@ -569,9 +609,10 @@
             break;
 
           case 'error':
-            console.error('Stream error:', data.error);
+            console.error('Stream error:', data.error, data.details);
             ShopAIChat.UI.removeTypingIndicator();
-            currentMessageElement.textContent = "Sorry, I couldn't process your request. Please try again later.";
+            const errorMessage = data.details ? `${data.error}: ${data.details}` : (data.error || "Sorry, I couldn't process your request. Please try again later.");
+            currentMessageElement.textContent = errorMessage;
             break;
 
           case 'rate_limit_exceeded':
@@ -595,7 +636,7 @@
             }
             break;
 
-          case 'new_message':
+          case 'new_message': {
             ShopAIChat.Formatting.formatMessageContent(currentMessageElement);
             ShopAIChat.UI.showTypingIndicator();
 
@@ -609,6 +650,7 @@
             // Update the current element reference
             updateCurrentElement(newMessageElement);
             break;
+          }
 
           case 'content_block_complete':
             ShopAIChat.UI.showTypingIndicator();
@@ -630,7 +672,7 @@
           messagesContainer.appendChild(loadingMessage);
 
           // Fetch history from the server
-          const historyUrl = `https://localhost:3458/chat?history=true&conversation_id=${encodeURIComponent(conversationId)}`;
+          const historyUrl = `/apps/boat-chat/chat?history=true&conversation_id=${encodeURIComponent(conversationId)}`;
           console.log('Fetching history from:', historyUrl);
 
           const response = await fetch(historyUrl, {
@@ -779,7 +821,7 @@
           attemptCount++;
 
           try {
-            const tokenUrl = 'https://localhost:3458/auth/token-status?conversation_id=' +
+            const tokenUrl = '/apps/boat-chat/auth/token-status?conversation_id=' +
               encodeURIComponent(conversationId);
             const response = await fetch(tokenUrl);
 
@@ -832,69 +874,173 @@
         const card = document.createElement('div');
         card.classList.add('shop-ai-product-card');
 
-        // Create image container
-        const imageContainer = document.createElement('div');
-        imageContainer.classList.add('shop-ai-product-image');
+        // --- Image Section ---
+        const imageWrapper = document.createElement('div');
+        imageWrapper.classList.add('shop-ai-product-image');
 
-        // Add product image or placeholder
+        // Shimmer placeholder shown while image loads
+        const shimmer = document.createElement('div');
+        shimmer.classList.add('shop-ai-img-shimmer');
+        imageWrapper.appendChild(shimmer);
+
         const image = document.createElement('img');
-        image.src = product.image_url || 'https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-image_large.png';
-        image.alt = product.title;
-        image.onerror = function() {
-          // If image fails to load, use a fallback placeholder
-          this.src = 'https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-image_large.png';
-        };
-        imageContainer.appendChild(image);
-        card.appendChild(imageContainer);
+        image.alt = product.title || 'Product image';
+        image.loading = 'lazy';
+        image.style.opacity = '0';
+        image.style.transition = 'opacity 0.3s ease';
 
-        // Add product info
+        const imgSrc = product.image_url || '';
+        if (imgSrc) {
+          image.src = imgSrc;
+        } else {
+          // Use SVG placeholder if no image URL
+          image.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='140' viewBox='0 0 200 140'%3E%3Crect width='200' height='140' fill='%23f0f0f0'/%3E%3Ctext x='50%25' y='50%25' font-size='32' text-anchor='middle' dominant-baseline='middle' fill='%23ccc'%3E🛍️%3C/text%3E%3C/svg%3E`;
+        }
+
+        image.onload = function() {
+          shimmer.style.display = 'none';
+          image.style.opacity = '1';
+        };
+        image.onerror = function() {
+          shimmer.style.display = 'none';
+          this.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='140' viewBox='0 0 200 140'%3E%3Crect width='200' height='140' fill='%23f0f0f0'/%3E%3Ctext x='50%25' y='50%25' font-size='32' text-anchor='middle' dominant-baseline='middle' fill='%23ccc'%3E🛍️%3C/text%3E%3C/svg%3E`;
+          this.style.opacity = '1';
+        };
+
+        imageWrapper.appendChild(image);
+
+        // Quick-view overlay on hover
+        if (product.url) {
+          const overlay = document.createElement('a');
+          overlay.classList.add('shop-ai-product-overlay');
+          overlay.href = product.url;
+          overlay.target = '_blank';
+          overlay.rel = 'noopener noreferrer';
+          overlay.innerHTML = '<span>👁 View</span>';
+          imageWrapper.appendChild(overlay);
+        }
+
+        card.appendChild(imageWrapper);
+
+        // --- Info Section ---
         const info = document.createElement('div');
         info.classList.add('shop-ai-product-info');
 
-        // Add product title
-        const title = document.createElement('h3');
+        // Product title
+        const title = document.createElement('p');
         title.classList.add('shop-ai-product-title');
-        title.textContent = product.title;
-
-        // If product has a URL, make the title a link
+        title.title = product.title; // tooltip for truncated titles
         if (product.url) {
           const titleLink = document.createElement('a');
           titleLink.href = product.url;
           titleLink.target = '_blank';
-          titleLink.textContent = product.title;
-          title.textContent = '';
+          titleLink.rel = 'noopener noreferrer';
+          titleLink.textContent = product.title || 'Product';
           title.appendChild(titleLink);
+        } else {
+          title.textContent = product.title || 'Product';
         }
-
         info.appendChild(title);
 
-        // Add product price
+        // Product price
         const price = document.createElement('p');
         price.classList.add('shop-ai-product-price');
-        price.textContent = product.price;
+        price.textContent = product.price || '';
         info.appendChild(price);
 
-        // Add add-to-cart button
-        const button = document.createElement('button');
-        button.classList.add('shop-ai-add-to-cart');
-        button.textContent = 'Add to Cart';
-        button.dataset.productId = product.id;
+        // Action buttons row
+        const actions = document.createElement('div');
+        actions.classList.add('shop-ai-product-actions');
 
-        // Add click handler for the button
-        button.addEventListener('click', function() {
-          // Send message to add this product to cart
-          const input = document.querySelector('.shop-ai-chat-input input');
-          if (input) {
-            input.value = `Add ${product.title} to my cart`;
-            // Trigger a click on the send button
-            const sendButton = document.querySelector('.shop-ai-chat-send');
-            if (sendButton) {
-              sendButton.click();
+        // Add to Cart button
+        const cartButton = document.createElement('button');
+        cartButton.classList.add('shop-ai-add-to-cart');
+        cartButton.innerHTML = '🛒 Add';
+        cartButton.dataset.productId = product.id;
+        cartButton.dataset.variantId = product.variant_id;
+        
+        cartButton.addEventListener('click', async function(e) {
+          e.preventDefault();
+          const vId = product.variant_id;
+          if (!vId) {
+            // Fallback to typing if no variant found
+            const input = document.querySelector('.shop-ai-chat-input input');
+            if (input) {
+              input.value = `Add ${product.title} to my cart`;
+              const sendButton = document.querySelector('.shop-ai-chat-send');
+              if (sendButton) sendButton.click();
             }
+            return;
+          }
+
+          // Direct Shopify Cart AJAX functionality
+          const originalText = cartButton.innerHTML;
+          cartButton.innerHTML = '⌛ Adding...';
+          cartButton.disabled = true;
+
+          try {
+            const rootPath = window.Shopify?.routes?.root || '/';
+            const fetchUrl = rootPath.endsWith('/') ? rootPath + 'cart/add.js' : rootPath + '/cart/add.js';
+
+            const response = await fetch(fetchUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                items: [{ id: Number(vId), quantity: 1 }]
+              })
+            });
+            
+            if (response.ok) {
+              cartButton.innerHTML = '✅ Loading Cart...';
+              cartButton.style.background = '#10b981';
+              
+              // Trigger instantaneous redirection to unified cart page
+              const cartUrl = rootPath.endsWith('/') ? rootPath + 'cart' : rootPath + '/cart';
+              window.location.href = cartUrl;
+            } else {
+              throw new Error("Add failed");
+            }
+          } catch (err) {
+             console.error("Shopify Cart Add failed:", err);
+             cartButton.innerHTML = '❌ Failed';
+             setTimeout(() => {
+               cartButton.innerHTML = originalText;
+               cartButton.disabled = false;
+             }, 2000);
           }
         });
+        actions.appendChild(cartButton);
 
-        info.appendChild(button);
+        // Buy Now direct checkout button
+        const buyButton = document.createElement('button');
+        buyButton.classList.add('shop-ai-buy-now');
+        buyButton.innerHTML = '⚡ Buy';
+        
+        buyButton.addEventListener('click', function() {
+          const vId = product.variant_id;
+          if (vId) {
+            const rootPath = window.Shopify?.routes?.root || '/';
+            const checkoutBase = rootPath.endsWith('/') ? rootPath + 'cart/' : rootPath + '/cart/';
+            // Shopify standard Direct Checkout route format: /cart/VARIANT_ID:1
+            window.location.href = checkoutBase + vId + ':1';
+          } else if (product.url) {
+             window.location.href = product.url;
+          }
+        });
+        actions.appendChild(buyButton);
+
+        // View Product link button
+        if (product.url) {
+          const viewButton = document.createElement('a');
+          viewButton.classList.add('shop-ai-view-product');
+          viewButton.href = product.url;
+          viewButton.target = '_blank';
+          viewButton.rel = 'noopener noreferrer';
+          viewButton.textContent = 'View';
+          actions.appendChild(viewButton);
+        }
+
+        info.appendChild(actions);
         card.appendChild(info);
 
         return card;

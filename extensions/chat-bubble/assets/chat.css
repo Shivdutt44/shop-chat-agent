@@ -398,178 +398,340 @@
     opacity: 0.8;
   }
 
-  /* Product Section Styling */
+  /* ========== PRODUCT SECTION ========== */
   .shop-ai-product-section {
     display: flex;
     flex-direction: column;
-    margin: 15px 0;
-    width: 100%;
-    border-top: 1px solid #eaeaea;
-    border-bottom: 1px solid #eaeaea;
-    padding: 10px 0;
+    margin: 12px -4px 4px -4px;
+    width: calc(100% + 8px);
+    background: linear-gradient(135deg, #f8f7ff 0%, #fff 100%);
+    border-radius: 14px;
+    border: 1px solid #ece9ff;
+    padding: 12px 10px;
+    box-shadow: 0 2px 8px rgba(80, 70, 228, 0.06);
   }
-  
-  /* Product Header Styling */
+
+  /* Product Header */
   .shop-ai-product-header {
-    padding: 0 0 10px 5px;
-    margin-bottom: 10px;
+    padding: 0 2px 10px 2px;
   }
-  
+
+  .shop-ai-product-header-inner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .shop-ai-product-header-icon {
+    font-size: 16px;
+  }
+
   .shop-ai-product-header h4 {
-    font-size: 15px;
-    font-weight: 600;
-    color: #333;
+    font-size: 14px;
+    font-weight: 700;
+    color: #1a1a2e;
     margin: 0;
+    flex: 1;
+    letter-spacing: -0.2px;
   }
-  
-  /* Product Grid Styling */
+
+  .shop-ai-product-count {
+    font-size: 11px;
+    font-weight: 600;
+    background: #5046e4;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.2px;
+  }
+
+  /* No Products State */
+  .shop-ai-no-products {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    color: #999;
+    gap: 6px;
+    font-size: 13px;
+  }
+
+  .shop-ai-no-products span {
+    font-size: 28px;
+  }
+
+  /* Product Grid */
   .shop-ai-product-grid {
     display: flex;
     flex-direction: row;
-    gap: 12px;
+    gap: 10px;
     overflow-x: auto;
-    padding: 5px 0;
+    padding: 4px 2px 8px 2px;
     scrollbar-width: thin;
+    scrollbar-color: #d0ccff transparent;
     width: 100%;
-    min-height: 220px;
-    background-color: transparent;
     -webkit-overflow-scrolling: touch;
   }
-  
-  /* Hide scrollbar in webkit browsers */
+
   .shop-ai-product-grid::-webkit-scrollbar {
-    height: 6px;
+    height: 4px;
   }
-  
+
   .shop-ai-product-grid::-webkit-scrollbar-thumb {
-    background-color: rgba(0, 0, 0, 0.2);
-    border-radius: 3px;
+    background: #d0ccff;
+    border-radius: 4px;
   }
-  
-  /* Product Card Styling */
+
+  /* Product Card */
   .shop-ai-product-card {
-    background: white;
-    border-radius: 10px;
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
-    min-width: 180px;
-    max-width: 180px;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.07);
+    min-width: 160px;
+    max-width: 160px;
     overflow: hidden;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: transform 0.22s ease, box-shadow 0.22s ease;
     flex-shrink: 0;
-    display: block;
-    border: 1px solid #eaeaea;
+    border: 1px solid #eeeeff;
     position: relative;
+    cursor: pointer;
   }
-  
+
   .shop-ai-product-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transform: translateY(-4px);
+    box-shadow: 0 8px 20px rgba(80, 70, 228, 0.14);
+    border-color: #c5c0ff;
   }
-  
-  /* Product Image Styling */
+
+  /* Product Image */
   .shop-ai-product-image {
-    height: 140px;
+    height: 130px;
     width: 100%;
     overflow: hidden;
-    background: #f7f7f7;
+    background: #f4f3ff;
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
   }
-  
+
   .shop-ai-product-image img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    display: block;
   }
-  
-  /* Product Info Styling */
+
+  /* Shimmer loading animation */
+  .shop-ai-img-shimmer {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, #f0eefd 25%, #e4e1ff 50%, #f0eefd 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s infinite;
+    z-index: 1;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Hover overlay on image */
+  .shop-ai-product-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(80, 70, 228, 0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    text-decoration: none;
+    z-index: 2;
+  }
+
+  .shop-ai-product-overlay span {
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    background: rgba(255,255,255,0.2);
+    padding: 5px 12px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.4);
+    backdrop-filter: blur(4px);
+    letter-spacing: 0.3px;
+  }
+
+  .shop-ai-product-card:hover .shop-ai-product-overlay {
+    opacity: 1;
+  }
+
+  /* Product Info */
   .shop-ai-product-info {
-    padding: 10px;
+    padding: 8px 9px 9px;
   }
-  
+
   .shop-ai-product-title {
-    margin: 0 0 5px 0;
-    font-size: 14px;
-    line-height: 1.3;
-    font-weight: 500;
-    color: #333;
+    margin: 0 0 4px 0;
+    font-size: 12px;
+    line-height: 1.35;
+    font-weight: 600;
+    color: #1a1a2e;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  
-  .shop-ai-product-price {
-    margin: 0 0 10px 0;
-    font-size: 14px;
-    font-weight: 600;
-    color: #5046e4;
+
+  .shop-ai-product-title a {
+    color: inherit;
+    text-decoration: none;
   }
-  
-  /* Add to Cart Button Styling */
+
+  .shop-ai-product-title a:hover {
+    color: #5046e4;
+    text-decoration: underline;
+  }
+
+  .shop-ai-product-price {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: #5046e4;
+    letter-spacing: -0.3px;
+  }
+
+  /* Action buttons row */
+  .shop-ai-product-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+    margin-top: 4px;
+  }
+
   .shop-ai-add-to-cart {
-    width: 100%;
-    padding: 8px 0;
-    background-color: #5046e4;
+    flex: 1 1 auto;
+    padding: 6px 6px;
+    background: linear-gradient(135deg, #5046e4, #7b6ff0);
     color: white;
     border: none;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 500;
+    border-radius: 7px;
+    font-size: 11px;
+    font-weight: 600;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    letter-spacing: 0.1px;
+    min-width: 60px;
+    text-align: center;
   }
-  
+
   .shop-ai-add-to-cart:hover {
-    background-color: #3f36c0;
+    background: linear-gradient(135deg, #3f36c0, #5046e4);
+    transform: scale(1.02);
+    box-shadow: 0 3px 8px rgba(80, 70, 228, 0.3);
   }
-  
-  /* Responsive adjustments for small screens */
+
+  .shop-ai-add-to-cart:active {
+    transform: scale(0.98);
+  }
+
+  .shop-ai-buy-now {
+    flex: 1 1 auto;
+    padding: 6px 6px;
+    background: linear-gradient(135deg, #f97316, #fb923c);
+    color: white;
+    border: none;
+    border-radius: 7px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    letter-spacing: 0.1px;
+    min-width: 60px;
+    text-align: center;
+  }
+
+  .shop-ai-buy-now:hover {
+    background: linear-gradient(135deg, #ea580c, #f97316);
+    transform: scale(1.02);
+    box-shadow: 0 3px 8px rgba(249, 115, 22, 0.3);
+  }
+
+  .shop-ai-view-product {
+    padding: 6px 6px;
+    background: transparent;
+    color: #64748b;
+    border: 1px solid #cbd5e1;
+    border-radius: 7px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 100%; /* full width on newline or next flex break */
+    margin-top: 2px;
+  }
+
+  .shop-ai-view-product:hover {
+    background: #5046e4;
+    color: white;
+  }
+
+  /* ========== RESPONSIVE ========== */
   @media (max-width: 480px) {
     .shop-ai-product-grid {
       flex-direction: column;
-      padding: 5px;
-      max-height: 60vh;
+      padding: 4px 2px;
+      max-height: 55vh;
       overflow-y: auto;
-      min-height: auto;
+      overflow-x: hidden;
     }
-    
+
     .shop-ai-product-card {
       min-width: 100%;
       max-width: 100%;
       display: flex;
-      align-items: center;
-      margin-bottom: 8px;
+      flex-direction: row;
+      align-items: stretch;
     }
-    
+
     .shop-ai-product-image {
-      width: 80px;
-      height: 80px;
+      width: 90px;
+      height: 90px;
       flex-shrink: 0;
     }
-    
+
     .shop-ai-product-info {
       flex: 1;
-      padding: 5px 10px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
     }
-    
+
     .shop-ai-product-title {
       white-space: normal;
       display: -webkit-box;
       -webkit-line-clamp: 2;
+      line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
-      text-overflow: ellipsis;
     }
-    
-    .shop-ai-add-to-cart {
-      padding: 6px 0;
-      font-size: 12px;
-    }
-    
+
     .shop-ai-product-section {
-      margin: 10px 0;
-      padding: 5px 0;
+      margin: 12px 0 4px 0;
+      width: 100%;
+    }
+
+    .shop-ai-product-overlay {
+      display: none; /* hide overlay on mobile - tap goes to link directly */
     }
   }
   
@@ -608,4 +770,41 @@
       opacity: 0.4;
       transform: scale(1);
     }
+  }
+
+  /* ========== SUGGESTION CHIPS ========== */
+  .shop-ai-suggestion-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed rgba(80, 70, 228, 0.2);
+  }
+
+  .shop-ai-suggestion-chip {
+    background: #f0eeff;
+    color: #5046e4;
+    border: 1px solid #dcd8ff;
+    border-radius: 16px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: left;
+    line-height: 1.3;
+  }
+
+  .shop-ai-suggestion-chip:hover {
+    background: #5046e4;
+    color: white;
+    border-color: #5046e4;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(80, 70, 228, 0.15);
+  }
+
+  .shop-ai-suggestion-chip:active {
+    transform: translateY(0);
   }
