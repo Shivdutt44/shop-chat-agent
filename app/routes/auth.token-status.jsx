@@ -61,6 +61,7 @@ function corsHeaders(request) {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Accept",
+    "Access-Control-Allow-Private-Network": "true",
     "Access-Control-Max-Age": "86400"
   };
 }

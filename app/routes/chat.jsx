@@ -2,11 +2,13 @@
  * Chat API Route
  * Handles chat interactions with Claude API and tools
  */
+import 'dotenv/config';
 import MCPClient from "../mcp-client";
 import { saveMessage, getConversationHistory, storeCustomerAccountUrls, getCustomerAccountUrls as getCustomerAccountUrlsFromDb } from "../db.server";
 import AppConfig from "../services/config.server";
+import prisma from "../db.server";
 import { createSseStream } from "../services/streaming.server";
-import { createClaudeService } from "../services/claude.server";
+import { classifyIntent, generateResponse, buildToolQuery, streamText } from "../services/nlp.server";
 import { createToolService } from "../services/tool.server";
 
 
@@ -42,6 +44,13 @@ export async function loader({ request }) {
  * React Router action function for handling POST requests
  */
 export async function action({ request }) {
+  // Handle OPTIONS requests (CORS preflight) in case it hits the action path
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: getCorsHeaders(request)
+    });
+  }
   return handleChatRequest(request);
 }
 
@@ -116,176 +125,120 @@ async function handleChatSession({
   request,
   userMessage,
   conversationId,
-  promptType,
   stream
 }) {
-  // Initialize services
-  const claudeService = createClaudeService();
   const toolService = createToolService();
 
-  // Initialize MCP client
+  // Initialize MCP client for tool access
   const shopId = request.headers.get("X-Shopify-Shop-Id");
   const shopDomain = request.headers.get("Origin");
-  const { mcpApiUrl } = await getCustomerAccountUrls(shopDomain, conversationId);
+  const hostname = shopDomain ? new URL(shopDomain).hostname : null;
 
-  const mcpClient = new MCPClient(
-    shopDomain,
-    conversationId,
-    shopId,
-    mcpApiUrl,
-  );
-
-  try {
-    // Send conversation ID to client
-    stream.sendMessage({ type: 'id', conversation_id: conversationId });
-
-    // Connect to MCP servers and get available tools
-    let storefrontMcpTools = [], customerMcpTools = [];
-
+  // Load dynamic settings via raw SQL to bypass Prisma node-module locks
+  let settings = null;
+  if (hostname) {
     try {
-      storefrontMcpTools = await mcpClient.connectToStorefrontServer();
-      customerMcpTools = await mcpClient.connectToCustomerServer();
-
-      console.log(`Connected to MCP with ${storefrontMcpTools.length} tools`);
-      console.log(`Connected to customer MCP with ${customerMcpTools.length} tools`);
-    } catch (error) {
-      console.warn('Failed to connect to MCP servers, continuing without tools:', error.message);
-    }
-
-    // Prepare conversation state
-    let conversationHistory = [];
-    let productsToDisplay = [];
-
-    // Save user message to the database
-    await saveMessage(conversationId, 'user', userMessage);
-
-    // Fetch all messages from the database for this conversation
-    const dbMessages = await getConversationHistory(conversationId);
-
-    // Format messages for Claude API
-    conversationHistory = dbMessages.map(dbMessage => {
-      let content;
-      try {
-        content = JSON.parse(dbMessage.content);
-      } catch (e) {
-        content = dbMessage.content;
+      const rows = await prisma.$queryRaw`SELECT * FROM AppSettings WHERE shop = ${hostname} LIMIT 1`;
+      if (rows && rows.length > 0) {
+        settings = rows[0];
       }
-      return {
-        role: dbMessage.role,
-        content
-      };
-    });
+    } catch (e) {
+      console.warn("[Prisma] Failed to fetch settings via raw query", e.message);
+    }
+  }
 
-    // Execute the conversation stream
-    let finalMessage = { role: 'user', content: userMessage };
+  // Default Fallback
+  const activeSettings = settings || {
+    agentName: "AI Assistant",
+    welcomeMessage: "Namaste! Main aapki kaise madad kar sakta hoon?"
+  };
 
-    while (finalMessage.stop_reason !== "end_turn") {
-      finalMessage = await claudeService.streamConversation(
-        {
-          messages: conversationHistory,
-          promptType,
-          tools: mcpClient.tools
-        },
-        {
-          // Handle text chunks
-          onText: (textDelta) => {
-            stream.sendMessage({
-              type: 'chunk',
-              chunk: textDelta
-            });
-          },
+  const customerUrls = await getCustomerAccountUrls(shopDomain, conversationId);
+  const { mcpApiUrl } = customerUrls || {};
 
-          // Handle complete messages
-          onMessage: (message) => {
-            conversationHistory.push({
-              role: message.role,
-              content: message.content
-            });
+  const mcpClient = new MCPClient(shopDomain, conversationId, shopId, mcpApiUrl);
 
-            saveMessage(conversationId, message.role, JSON.stringify(message.content))
-              .catch((error) => {
-                console.error("Error saving message to database:", error);
-              });
+  // Send conversation ID to client
+  stream.sendMessage({ type: 'id', conversation_id: conversationId });
 
-            // Send a completion message
-            stream.sendMessage({ type: 'message_complete' });
-          },
+  // Connect MCP tools (best-effort)
+  try {
+    await mcpClient.connectToStorefrontServer();
+    await mcpClient.connectToCustomerServer();
+  } catch (err) {
+    console.warn('MCP connection failed, continuing without tools:', err.message);
+  }
 
-          // Handle tool use requests
-          onToolUse: async (content) => {
-            const toolName = content.name;
-            const toolArgs = content.input;
-            const toolUseId = content.id;
+  console.log(`[MCP] Available tools: ${mcpClient.tools.map(t => t.name).join(', ') || '(none)'}`);
 
-            const toolUseMessage = `Calling tool: ${toolName} with arguments: ${JSON.stringify(toolArgs)}`;
+  // ── Step 1: Save user message ──────────────────────────────────
+  await saveMessage(conversationId, 'user', userMessage);
 
-            stream.sendMessage({
-              type: 'tool_use',
-              tool_use_message: toolUseMessage
-            });
+  // ── Step 2: NLP Intent Classification ─────────────────────────
+  const { intent, entities } = classifyIntent(userMessage);
+  console.log(`[NLP] Intent: ${intent} | Entities:`, entities);
 
-            // Call the tool
-            const toolUseResponse = await mcpClient.callTool(toolName, toolArgs);
+  // ── Step 3: Tool Call (if needed) ──────────────────────────────
+  let toolData = null;
+  const productsToDisplay = [];
+  const toolQuery = buildToolQuery(intent, entities);
 
-            // Handle tool response based on success/error
-            if (toolUseResponse.error) {
-              await toolService.handleToolError(
-                toolUseResponse,
-                toolName,
-                toolUseId,
-                conversationHistory,
-                stream.sendMessage,
-                conversationId
-              );
-            } else {
-              await toolService.handleToolSuccess(
-                toolUseResponse,
-                toolName,
-                toolUseId,
-                conversationHistory,
-                productsToDisplay,
-                conversationId
-              );
-            }
+  if (toolQuery && mcpClient.tools && mcpClient.tools.length > 0) {
+    const resolvedToolName = resolveToolName(toolQuery.toolName, mcpClient.tools);
 
-            // Signal new message to client
-            stream.sendMessage({ type: 'new_message' });
-          },
+    if (resolvedToolName) {
+      try {
+        stream.sendMessage({ type: 'tool_use', tool_use_message: `Searching: ${resolvedToolName}` });
+        const toolResponse = await mcpClient.callTool(resolvedToolName, toolQuery.args);
 
-          // Handle content block completion
-          onContentBlock: (contentBlock) => {
-            if (contentBlock.type === 'text') {
-              stream.sendMessage({
-                type: 'content_block_complete',
-                content_block: contentBlock
-              });
-            }
+        if (!toolResponse.error) {
+          toolData = toolResponse.content?.[0]?.text || null;
+          // Extract products if this is the catalog search tool
+          if (toolQuery.toolName === AppConfig.tools.productSearchName) {
+            const processed = toolService.processProductSearchResult(toolResponse);
+            productsToDisplay.push(...processed);
           }
+          stream.sendMessage({ type: 'new_message' });
+        } else {
+          console.warn(`[NLP] Tool "${resolvedToolName}" returned error:`, toolResponse.error);
         }
+      } catch (err) {
+        console.warn(`[NLP] Tool call failed: ${err.message}`);
+      }
+    } else {
+      console.warn(
+        `[NLP] Tool call skipped: "${toolQuery.toolName}" not found in MCP tools [${mcpClient.tools.map(t => t.name).join(', ')}]`
       );
     }
+  }
 
-    // Signal end of turn
-    stream.sendMessage({ type: 'end_turn' });
+  // ── Step 4: Generate Response ───────────────────────────────────
+  const responseText = generateResponse(intent, entities, toolData, activeSettings);
 
-    // Send product results if available
-    if (productsToDisplay.length > 0) {
-      stream.sendMessage({
-        type: 'product_results',
-        products: productsToDisplay
-      });
-    }
-  } catch (error) {
-    // The streaming handler takes care of error handling
-    throw error;
+  // ── Step 5: Stream Response word-by-word ────────────────────────
+  await streamText(responseText, (chunk) => {
+    stream.sendMessage({ type: 'chunk', chunk });
+  });
+
+  // ── Step 6: Save assistant message ─────────────────────────────
+  await saveMessage(conversationId, 'assistant', responseText);
+
+  // ── Step 7: Signal completion ───────────────────────────────────
+  stream.sendMessage({ type: 'message_complete' });
+  stream.sendMessage({ type: 'end_turn' });
+
+  // ── Step 8: Send product cards if any ──────────────────────────
+  if (productsToDisplay.length > 0) {
+    stream.sendMessage({ type: 'product_results', products: productsToDisplay });
   }
 }
+
 
 /**
  * Get the customer MCP API URL for a shop
  * @param {string} shopDomain - The shop domain
  * @param {string} conversationId - The conversation ID
- * @returns {string} The customer MCP API URL
+ * @returns {Promise<{mcpApiUrl:string,authorizationUrl:string,tokenUrl:string}|null>} Customer account URLs or null
  */
 async function getCustomerAccountUrls(shopDomain, conversationId) {
   try {
@@ -326,6 +279,61 @@ async function getCustomerAccountUrls(shopDomain, conversationId) {
 }
 
 /**
+ * Resolves a desired NLP tool name to an actual available MCP tool name.
+ * Tries exact match first, then fuzzy keyword-based matching so the app
+ * works even when Shopify renames or versions its MCP tools.
+ *
+ * @param {string} desiredName - The tool name from buildToolQuery (e.g. "search_shop_catalog")
+ * @param {Array<{name:string}>} availableTools - Tools returned by the MCP server
+ * @returns {string|null} Resolved tool name, or null if nothing suitable found
+ */
+function resolveToolName(desiredName, availableTools) {
+  // 1. Exact match
+  if (availableTools.some(t => t.name === desiredName)) return desiredName;
+
+  // 2. Case-insensitive exact match
+  const lowerDesired = desiredName.toLowerCase();
+  const caseMatch = availableTools.find(t => t.name.toLowerCase() === lowerDesired);
+  if (caseMatch) return caseMatch.name;
+
+  // 3. Fuzzy matchers keyed by canonical NLP tool name
+  const FUZZY_MATCHERS = {
+    search_shop_catalog: (n) =>
+      (n.includes('search') && (n.includes('catalog') || n.includes('product'))) ||
+      n === 'search_catalog' || n === 'search_products' || n === 'product_search',
+    get_order: (n) =>
+      n.includes('order') && (n.includes('get') || n.includes('fetch') || n.includes('lookup') || n.includes('read')),
+    get_orders: (n) =>
+      (n.includes('order') && (n.includes('list') || n.includes('history') || n.includes('customer'))) ||
+      n === 'get_orders' || n === 'list_orders',
+    read_shop_policies: (n) =>
+      n.includes('polic') || (n.includes('shop') && n.includes('read')) || n === 'get_policies',
+    get_shop: (n) =>
+      n === 'get_shop' || n === 'read_shop' || n === 'shop_info' || n === 'get_store' ||
+      (n.includes('shop') && !n.includes('catalog') && !n.includes('search') && !n.includes('polic')),
+  };
+
+  const matcher = FUZZY_MATCHERS[desiredName];
+  if (matcher) {
+    const fuzzyMatch = availableTools.find(t => matcher(t.name.toLowerCase()));
+    if (fuzzyMatch) {
+      console.log(`[NLP] Resolved tool "${desiredName}" → "${fuzzyMatch.name}"`);
+      return fuzzyMatch.name;
+    }
+
+    // 4. Loose fallback: first keyword in the name
+    const firstKeyword = desiredName.split('_')[0];
+    const looseMatch = availableTools.find(t => t.name.toLowerCase().includes(firstKeyword));
+    if (looseMatch) {
+      console.log(`[NLP] Loosely resolved tool "${desiredName}" → "${looseMatch.name}"`);
+      return looseMatch.name;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Gets CORS headers for the response
  * @param {Request} request - The request object
  * @returns {Object} CORS headers object
@@ -339,6 +347,7 @@ function getCorsHeaders(request) {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": requestHeaders,
     "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Private-Network": "true",
     "Access-Control-Max-Age": "86400" // 24 hours
   };
 }
@@ -358,6 +367,7 @@ function getSseHeaders(request) {
     "Access-Control-Allow-Credentials": "true",
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET,OPTIONS,POST",
-    "Access-Control-Allow-Headers": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version"
+    "Access-Control-Allow-Headers": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version",
+    "Access-Control-Allow-Private-Network": "true"
   };
 }
