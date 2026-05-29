@@ -53,5 +53,13 @@ export function filterAndSortProducts(products, filterOptions) {
     return sorted;
   }
 
+  if (filterOptions.type === 'low_price') {
+    // Sort: lowest price first (for "sasta/cheap" queries without a budget limit)
+    let sorted = [...products];
+    sorted.sort((a, b) => parsePriceValue(a) - parsePriceValue(b));
+    console.log(`[Price Filter] Low price sort: sorted ${sorted.length} products`);
+    return sorted;
+  }
+
   return products;
 }

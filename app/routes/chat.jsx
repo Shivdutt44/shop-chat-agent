@@ -219,9 +219,20 @@ async function handleChatSession({
             const filterOptions = buildProductFilterOptions(intent, entities);
             const processed = toolService.processProductSearchResult(toolResponse, filterOptions);
             productsToDisplay.push(...processed);
+            // Override raw JSON with a structured summary so Claude gives accurate real-time answers
+            toolData = buildProductSummaryForClaude(processed, intent, entities);
           }
           if (toolData) {
-            conversationMessages.push({ role: 'assistant', content: toolData });
+            // Inject as a user-context prefix so Claude uses real data, not hallucination
+            const lastMsg = conversationMessages[conversationMessages.length - 1];
+            if (lastMsg && lastMsg.role === 'user') {
+              conversationMessages[conversationMessages.length - 1] = {
+                role: 'user',
+                content: `${userMessage}\n\n[REAL-TIME STORE DATA — use this exact data to answer, do not guess or invent]:\n${toolData}`
+              };
+            } else {
+              conversationMessages.push({ role: 'user', content: `[REAL-TIME STORE DATA]:\n${toolData}` });
+            }
           }
           stream.sendMessage({ type: 'new_message' });
           assistantStarted = true;
@@ -341,8 +352,11 @@ async function handleChatSession({
  * @returns {Object|null} Filter options for tool.server.js filterAndSortProducts
  */
 function buildProductFilterOptions(intent, entities) {
-  if (intent === 'budget' && entities.budget) {
-    return { type: 'budget', budget: entities.budget };
+  if (intent === 'budget') {
+    // With a price limit → filter + sort low-to-high; without → just sort low-to-high
+    return entities.budget
+      ? { type: 'budget', budget: entities.budget }
+      : { type: 'low_price' };
   }
   if (intent === 'high_price') {
     return { type: 'high_price' };
@@ -350,6 +364,47 @@ function buildProductFilterOptions(intent, entities) {
   return null;
 }
 
+
+/**
+ * Builds a human-readable product summary string for Claude
+ * so it can answer price/count questions with real store data.
+ * @param {Array} products - Processed, sorted product objects
+ * @param {string} intent - NLP intent
+ * @param {Object} entities - Extracted entities (budget etc.)
+ * @returns {string} Human-readable product context
+ */
+function buildProductSummaryForClaude(products, intent, entities) {
+  if (!products || products.length === 0) {
+    return 'No products found in store for this query.';
+  }
+
+  const lines = [];
+
+  if (intent === 'product_count') {
+    lines.push(`Store currently has ${products.length} products visible in catalog (this may be a partial list):`);
+  } else if (intent === 'high_price') {
+    lines.push(`Store products sorted by HIGHEST price first (${products.length} products):`);
+  } else if (intent === 'budget') {
+    const budgetText = entities.budget ? `under ₹${entities.budget}` : 'cheapest available';
+    lines.push(`Store products sorted by LOWEST price first — ${budgetText} (${products.length} products):`);
+  } else {
+    lines.push(`Store products (${products.length} results):`);
+  }
+
+  products.forEach((p, i) => {
+    const desc = p.description ? ` — ${p.description.slice(0, 80).replace(/\n/g, ' ')}` : '';
+    lines.push(`${i + 1}. ${p.title} | Price: ${p.price}${desc}`);
+  });
+
+  if (intent === 'high_price' && products.length > 0) {
+    lines.push(`\nMost expensive product: ${products[0].title} at ${products[0].price}`);
+  }
+  if ((intent === 'budget' || intent === 'product_search') && products.length > 0) {
+    lines.push(`\nCheapest product: ${products[products.length - 1].title} at ${products[products.length - 1].price}`);
+  }
+
+  return lines.join('\n');
+}
 
 /**
  * Get the customer MCP API URL for a shop

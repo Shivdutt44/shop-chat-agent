@@ -2,9 +2,9 @@
  * Tool Service
  * Manages tool execution and processing
  */
-import { saveMessage } from "../db.server";
-import AppConfig from "./config.server";
-import { filterAndSortProducts, parsePriceValue } from "./product-filter.server";
+import { saveMessage } from "../db.server.js";
+import AppConfig from "./config.server.js";
+import { filterAndSortProducts, parsePriceValue } from "./product-filter.server.js";
 
 /**
  * Creates a tool service instance
