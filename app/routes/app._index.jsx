@@ -7,11 +7,19 @@ export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
 
-  // Load actual analytics from DB
-  const [totalConvs, totalMsgs] = await Promise.all([
-    prisma.conversation.count(),
-    prisma.message.count()
-  ]);
+  // Load actual analytics from DB with graceful fallback
+  let totalConvs = 0;
+  let totalMsgs = 0;
+  try {
+    const counts = await Promise.all([
+      prisma.conversation.count(),
+      prisma.message.count()
+    ]);
+    totalConvs = counts[0];
+    totalMsgs = counts[1];
+  } catch (error) {
+    console.error("Dashboard analytics DB error:", error);
+  }
 
   const avgLength = totalConvs > 0 ? (totalMsgs / totalConvs).toFixed(1) : 0;
 

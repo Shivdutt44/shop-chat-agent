@@ -23,7 +23,17 @@ export async function generateAuthUrl(conversationId, shopId) {
 
   // Generate code verifier and challenge
   const verifier = generateCodeVerifier();
-  const challenge = await generateCodeChallenge(verifier);
+  let challenge;
+  try {
+    challenge = await generateCodeChallenge(verifier);
+  } catch (error) {
+    console.error('Failed to generate code challenge:', error);
+    return {
+      url: null,
+      conversation_id: conversationId,
+      error: 'Failed to generate authentication challenge'
+    };
+  }
 
   // Store the code verifier in the database
   try {
@@ -34,10 +44,25 @@ export async function generateAuthUrl(conversationId, shopId) {
 
   // Set code_challenge and code_challenge_method parameters
   const codeChallengeMethod = "S256";
-  const baseAuthUrl = await getBaseAuthUrl(conversationId);
+  let baseAuthUrl;
+  try {
+    baseAuthUrl = await getBaseAuthUrl(conversationId);
+  } catch (error) {
+    console.error('Failed to get base auth URL:', error);
+    return {
+      url: null,
+      conversation_id: conversationId,
+      error: 'Failed to retrieve authentication endpoint'
+    };
+  }
 
   if (!baseAuthUrl) {
-    throw new Error('Base auth URL not found');
+    console.error('Base auth URL not found for conversation:', conversationId);
+    return {
+      url: null,
+      conversation_id: conversationId,
+      error: 'No authentication endpoint configured for this store'
+    };
   }
 
 

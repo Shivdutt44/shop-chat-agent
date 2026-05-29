@@ -215,7 +215,9 @@ async function handleChatSession({
           toolData = toolResponse.content?.[0]?.text || null;
           // Extract products if this is the catalog search tool
           if (toolQuery.toolName === AppConfig.tools.productSearchName) {
-            const processed = toolService.processProductSearchResult(toolResponse);
+            // Pass filter options so products are filtered/sorted server-side
+            const filterOptions = buildProductFilterOptions(intent, entities);
+            const processed = toolService.processProductSearchResult(toolResponse, filterOptions);
             productsToDisplay.push(...processed);
           }
           if (toolData) {
@@ -329,6 +331,23 @@ async function handleChatSession({
   if (productsToDisplay.length > 0) {
     stream.sendMessage({ type: 'product_results', products: productsToDisplay });
   }
+}
+
+
+/**
+ * Builds filter options for product search results based on intent and entities.
+ * @param {string} intent - Detected intent from NLP classifyIntent
+ * @param {Object} entities - Extracted entities (budget, color, size, keywords)
+ * @returns {Object|null} Filter options for tool.server.js filterAndSortProducts
+ */
+function buildProductFilterOptions(intent, entities) {
+  if (intent === 'budget' && entities.budget) {
+    return { type: 'budget', budget: entities.budget };
+  }
+  if (intent === 'high_price') {
+    return { type: 'high_price' };
+  }
+  return null;
 }
 
 

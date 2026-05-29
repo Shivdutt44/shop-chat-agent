@@ -4,6 +4,7 @@
  */
 import { saveMessage } from "../db.server";
 import AppConfig from "./config.server";
+import { filterAndSortProducts, parsePriceValue } from "./product-filter.server";
 
 /**
  * Creates a tool service instance
@@ -51,9 +52,12 @@ export function createToolService() {
   /**
    * Processes product search results
    * @param {Object} toolUseResponse - The response from the tool
+   * @param {Object} [filterOptions] - Optional filter options
+   * @param {string} [filterOptions.type] - Filter type: 'budget', 'high_price', or null for none
+   * @param {number} [filterOptions.budget] - Maximum price for budget filtering
    * @returns {Array} Processed product data
    */
-  const processProductSearchResult = (toolUseResponse) => {
+  const processProductSearchResult = (toolUseResponse, filterOptions = null) => {
     try {
       console.log("Processing product search result");
       let products = [];
@@ -96,10 +100,13 @@ export function createToolService() {
           }
 
           if (rawProducts && rawProducts.length > 0) {
-            products = rawProducts
-              .slice(0, AppConfig.tools.maxProductsToDisplay)
-              .map(formatProductData);
-            console.log(`Found ${products.length} products to display`);
+            // First format all products
+            products = rawProducts.map(formatProductData);
+            // Then apply price filters/sorting if needed
+            products = filterAndSortProducts(products, filterOptions);
+            // Then limit display count
+            products = products.slice(0, AppConfig.tools.maxProductsToDisplay);
+            console.log(`Found ${products.length} products to display after filtering`);
           } else {
             console.log("[MCP] No products array found in response:", JSON.stringify(responseData).slice(0, 300));
           }

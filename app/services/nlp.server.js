@@ -55,10 +55,21 @@ const INTENT_PATTERNS = {
     'andar', 'se kam', '500', '1000', '2000', '5000', '10000', '15000', '20000',
     'low price', 'cheap products', 'value for money'
   ],
+  high_price: [
+    'high price', 'highly priced', 'expensive', 'mahenga', 'mehanga', 'most expensive',
+    'highest price', 'price high to low', 'high to low price', 'price high',
+    'costly', 'sabse mahenga', 'sabse mehanga', 'top price'
+  ],
   premium: [
     'premium', 'luxury', 'best quality', 'high end', 'expensive', 'top quality',
     'branded', 'original', 'genuine', 'mahenga', 'achha quality', 'best brand',
     'premium quality', 'top notch'
+  ],
+  product_count: [
+    'total products', 'kitne products', 'how many products', 'product count',
+    'total items', 'sare products', 'all products', 'store me kitne',
+    'total product', 'store me kitne product', 'kitne item',
+    'how many items', 'sab products', 'puri list', 'product list'
   ],
   support: [
     'help', 'support', 'contact', 'issue', 'problem', 'complaint', 'complain',
@@ -347,12 +358,27 @@ export function generateResponse(intent, entities, toolData = null, settings = {
       return `🔍 **${colorText}${sizeText} ${kwText || 'Products'} under ${budgetText}:**\n\nAbhi store mein yeh products available nahi hain ya search nahi ho saka. Store ki website visit karein.\n\n[Related: Show all products]\n[Related: Contact support]`;
     }
 
+    case 'high_price': {
+      const kwText = keywords.filter(k => k.length > 3).slice(0, 3).join(', ');
+      if (toolData) {
+        return `💎 **High Price ${kwText || 'Products'} (Price High to Low):**\n\nNeeche store ke sabse expensive products dekhen!\n\n[Related: Budget alternatives]\n[Related: Show all products]\n[Related: What is the return policy?]`;
+      }
+      return `💰 **Premium Products:**\n\nHigh price products dekhne ke liye store ki website visit karein.\n\n[Related: Show all products]\n[Related: Contact support]`;
+    }
+
     case 'premium': {
       const kwText = keywords.filter(k => k.length > 3).slice(0, 3).join(', ');
       if (toolData) {
         return `💎 **Premium ${kwText || 'Products'}:**\n\nStore ke top-rated products neeche dekhen!\n\n[Related: Budget alternatives]\n[Related: What is the return policy?]`;
       }
       return `💎 **Premium ${kwText || 'Products'}:**\n\nStore mein premium products dekhne ke liye website visit karein.\n\n[Related: Show all products]\n[Related: Contact support]`;
+    }
+
+    case 'product_count': {
+      if (toolData) {
+        return `📊 **Total Products in Store:**\n\nNeeche store ke saare products ki list dekhen!\n\n[Related: Filter by price]\n[Related: Show best sellers]\n[Related: What is the return policy?]`;
+      }
+      return `📊 **Store Products:**\n\nTotal products dekhne ke liye store ki website ki **Catalog** page visit karein.\n\n[Related: Show all products]\n[Related: Contact support]`;
     }
 
     case 'product_search':
@@ -556,15 +582,17 @@ export function buildToolQuery(intent, entities) {
   // ── Collections ───────────────────────────────────────────────
   if (intent === 'collections') {
     return { toolName: 'search_catalog', args: { query: keywords.length > 0 ? keywords.join(' ') : 'collections' } };
-  }
-
-  // ── Product catalog search (product_search, budget, premium, discount) ─
-  if (['product_search', 'budget', 'premium', 'discount'].includes(intent)) {
+  }    // ── Product catalog search (product_search, budget, high_price, premium, discount) ─
+  if (['product_search', 'budget', 'high_price', 'premium', 'discount'].includes(intent)) {
     let queryStr = [color, size, ...keywords.filter(k => k.length > 3).slice(0, 4)]
       .filter(Boolean).join(' ');
 
     if (intent === 'budget' && budget) {
-      queryStr += ` under ${budget}`;
+      // Don't append price text to query — MCP search_catalog won't parse it.
+      // Price filtering happens server-side in tool.server.js after results are returned.
+      queryStr = queryStr || 'products';
+    } else if (intent === 'high_price') {
+      queryStr = queryStr || 'products';
     } else if (intent === 'premium') {
       queryStr = `premium ${queryStr}`;
     } else if (intent === 'discount') {
@@ -572,6 +600,11 @@ export function buildToolQuery(intent, entities) {
     }
 
     return { toolName: 'search_catalog', args: { query: queryStr || 'products' } };
+  }
+
+  // ── Product count — search catalog broadly and count results ─────────
+  if (intent === 'product_count') {
+    return { toolName: 'search_catalog', args: { query: 'products' } };
   }
 
   // ── Store policies (shipping, return, refund, cancel) ─────────
