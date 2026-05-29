@@ -10,6 +10,7 @@ import prisma from "../db.server";
 import { createSseStream } from "../services/streaming.server";
 import { classifyIntent, generateResponse, buildToolQuery, streamText } from "../services/nlp.server";
 import { createToolService } from "../services/tool.server";
+import { createClaudeService } from "../services/claude.server";
 
 
 /**
@@ -128,6 +129,7 @@ async function handleChatSession({
   stream
 }) {
   const toolService = createToolService();
+  const useClaude = Boolean(process.env.CLAUDE_API_KEY);
 
   // Initialize MCP client for tool access
   const shopId = request.headers.get("X-Shopify-Shop-Id");
@@ -171,8 +173,15 @@ async function handleChatSession({
 
   console.log(`[MCP] Available tools: ${mcpClient.tools.map(t => t.name).join(', ') || '(none)'}`);
 
+  const previousMessages = await getConversationHistory(conversationId);
+  const conversationMessages = previousMessages.map((message) => ({
+    role: message.role,
+    content: message.content
+  }));
+
   // ── Step 1: Save user message ──────────────────────────────────
   await saveMessage(conversationId, 'user', userMessage);
+  conversationMessages.push({ role: 'user', content: userMessage });
 
   // ── Step 2: NLP Intent Classification ─────────────────────────
   const { intent, entities } = classifyIntent(userMessage);
@@ -180,6 +189,7 @@ async function handleChatSession({
 
   // ── Step 3: Tool Call (if needed) ──────────────────────────────
   let toolData = null;
+  let assistantStarted = false;
   const productsToDisplay = [];
   const toolQuery = buildToolQuery(intent, entities);
 
@@ -198,7 +208,11 @@ async function handleChatSession({
             const processed = toolService.processProductSearchResult(toolResponse);
             productsToDisplay.push(...processed);
           }
+          if (toolData) {
+            conversationMessages.push({ role: 'assistant', content: toolData });
+          }
           stream.sendMessage({ type: 'new_message' });
+          assistantStarted = true;
         } else {
           console.warn(`[NLP] Tool "${resolvedToolName}" returned error:`, toolResponse.error);
         }
@@ -212,13 +226,64 @@ async function handleChatSession({
     }
   }
 
-  // ── Step 4: Generate Response ───────────────────────────────────
-  const responseText = generateResponse(intent, entities, toolData, activeSettings);
+  const extractClaudeText = (finalMessage) => {
+    if (!finalMessage) return '';
+    if (typeof finalMessage.content === 'string') return finalMessage.content;
+    if (Array.isArray(finalMessage.content)) {
+      return finalMessage.content.map((block) => {
+        if (typeof block === 'string') return block;
+        return block?.text || block?.content || '';
+      }).join('');
+    }
+    if (typeof finalMessage.content === 'object') {
+      return finalMessage.content.text || finalMessage.content.content || '';
+    }
+    return '';
+  };
 
-  // ── Step 5: Stream Response word-by-word ────────────────────────
-  await streamText(responseText, (chunk) => {
-    stream.sendMessage({ type: 'chunk', chunk });
-  });
+  let responseText;
+
+  if (useClaude) {
+    const claudeService = createClaudeService();
+
+    if (!assistantStarted) {
+      stream.sendMessage({ type: 'new_message' });
+      assistantStarted = true;
+    }
+
+    const finalMessage = await claudeService.streamConversation(
+      {
+        messages: conversationMessages,
+        promptType,
+        tools: mcpClient.tools
+      },
+      {
+        onText: (chunk) => {
+          stream.sendMessage({ type: 'chunk', chunk });
+        },
+        onMessage: () => {},
+        onToolUse: async () => {
+          // Tool use via Claude is not wired through this flow.
+          // Local NLP tool calls are handled separately above.
+        }
+      }
+    );
+
+    responseText = extractClaudeText(finalMessage) || AppConfig.errorMessages.genericError;
+  } else {
+    if (!assistantStarted) {
+      stream.sendMessage({ type: 'new_message' });
+      assistantStarted = true;
+    }
+
+    // ── Step 4: Generate Response ───────────────────────────────────
+    responseText = generateResponse(intent, entities, toolData, activeSettings);
+
+    // ── Step 5: Stream Response word-by-word ────────────────────────
+    await streamText(responseText, (chunk) => {
+      stream.sendMessage({ type: 'chunk', chunk });
+    });
+  }
 
   // ── Step 6: Save assistant message ─────────────────────────────
   await saveMessage(conversationId, 'assistant', responseText);

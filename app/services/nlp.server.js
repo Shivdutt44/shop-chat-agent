@@ -39,6 +39,10 @@ const INTENT_PATTERNS = {
     'save', 'cashback', 'voucher', 'code', 'code do', 'coupon code', 'best price',
     'lowest price', 'kam price', 'offer hai kya', 'sale hai'
   ],
+  policies: [
+    'about you', 'about store', 'information', 'details', 'faq', 'policy', 'terms', 'legal',
+    'rules', 'kaun ho', 'store ke baare mein', 'jaankari', 'jankari'
+  ],
   product_search: [
     'show', 'find', 'search', 'looking for', 'want', 'need', 'chahiye', 'dikhao',
     'dikhawo', 'suggest', 'recommend', 'best', 'top', 'good', 'nice', 'buy',
@@ -77,6 +81,13 @@ const INTENT_PATTERNS = {
   cart: [
     'cart', 'checkout', 'buy now', 'added to cart', 'abandoned', 'cart mein',
     'add to cart', 'tokri', 'bag', 'checkout kaise', 'buy karna hai'
+  ],
+  collections: [
+    'collection', 'category', 'category dikhao', 'list collections', 'types of products',
+    'collections', 'catalog view'
+  ],
+  store_credit: [
+    'store credit', 'balance', 'kitna paisa', 'credit check', 'wallet', 'gift card balance'
   ]
 };
 
@@ -262,6 +273,34 @@ export function generateResponse(intent, entities, toolData = null, settings = {
       return `❌ **Order Cancel Karna:**\n\nApna **Order ID** share karein aur main check karta hoon ki order cancel ho sakta hai ya nahi.\n\nAgar order ship ho chuka hai toh **return process** follow karna hoga.\n\n[Related: Track my order status]\n[Related: Start a return instead]\n[Related: Contact support]`;
     }
 
+    case 'policies': {
+      if (toolData) {
+         const faq = extractPolicyText(toolData, keywords);
+         if (faq) {
+           return `📋 **Store Information & FAQs:**\n\n${faq}\n\n[Related: What is the return policy?]\n[Related: Show best selling products]`;
+         }
+      }
+      return `📋 **Store Policies:**\n\nAap store se related specific question pooch sakte hain (jaise return, shipping ya payment rules) aur main answer find kar dunga.\n\n[Related: Track my order]\n[Related: Contact support]`;
+    }
+
+    // ── Store Credit Balance — direct account inquiry ──────────────
+    case 'store_credit': {
+      if (toolData) {
+         // Extract potential wallet amount from get_store_credit_balances
+         const balance = toolData.balance || toolData.total_balance || toolData.amount || '0';
+         return `💳 **Store Credit Balance:**\n\nAapke account mein abhi **${balance}** ka store credit/wallet balance hai.\n\n[Related: View current offers]\n[Related: Show best sellers]`;
+      }
+      return `💳 **Store Credit:**\n\nAapna store credit balance janne ke liye please apne account mein login karein, ya humari support team ko reach karein.\n\n[Related: Log in to my account]\n[Related: What are the current offers?]`;
+    }
+
+    // ── Collections / Categories — show grouped items ───────────────
+    case 'collections': {
+      if (toolData) {
+         return `🗂️ **Store Collections & Categories:**\n\nMaine store ke standard collections fetch kiye hain. Neeche different category ke item showcase check karein!\n\n[Related: Best selling items]\n[Related: New arrivals]`;
+      }
+      return `🗂️ **Product Categories:**\n\nHamare pass multiple collections hain! Aap website ke **Menu** section se sabhi categories browse kar sakte hain.\n\n[Related: Show best sellers]\n[Related: What is new today?]`;
+    }
+
     // ── Discount — show real sale products via MCP search ──────────
     case 'discount': {
       if (toolData) {
@@ -417,8 +456,9 @@ function extractPolicyText(data, keywords) {
     const candidates = [];
     const addCandidate = (obj) => {
       if (!obj || typeof obj !== 'object') return;
-      const body = obj.body || obj.content || obj.text || obj.description || '';
-      const title = obj.title || obj.name || '';
+      // Map question/answer from new semantic FAQ tool along with standard policy bodies
+      const body = obj.answer || obj.body || obj.content || obj.text || obj.description || '';
+      const title = obj.question || obj.title || obj.name || '';
       if (body) candidates.push({ title, body });
     };
 
@@ -442,26 +482,16 @@ function extractPolicyText(data, keywords) {
     if (Array.isArray(parsed)) parsed.forEach(addCandidate);
     if (Array.isArray(parsed.policies)) parsed.policies.forEach(addCandidate);
 
-    // Score candidates by keyword overlap
-    const kwLower = keywords.map(k => k.toLowerCase());
-    let best = null;
-    let bestScore = 0;
+    if (candidates.length === 0) return null;
 
-    for (const c of candidates) {
-      const combined = (c.title + ' ' + c.body).toLowerCase();
-      const score = kwLower.filter(k => combined.includes(k)).length;
-      if (score > bestScore) { bestScore = score; best = c; }
-    }
+    // Format and aggregate all policy sections and Q&A entries found
+    const responseStr = candidates.map(c => {
+      const titleStr = c.title ? `**${c.title.trim()}**\n` : '';
+      const bodyStr = c.body.replace(/<[^>]*>/g, ' ').replace(/\s{2,}/g, ' ').trim();
+      return `${titleStr}${bodyStr}`;
+    }).join('\n\n');
 
-    // Fallback: first candidate if nothing keyword-matched
-    if (!best && candidates.length > 0) best = candidates[0];
-
-    if (!best) return null;
-
-    // Strip HTML tags and trim
-    const clean = best.body.replace(/<[^>]*>/g, ' ').replace(/\s{2,}/g, ' ').trim();
-    // Truncate if very long (keep first ~800 chars)
-    return clean.length > 800 ? clean.slice(0, 800) + '…' : clean;
+    return responseStr.length > 1200 ? responseStr.slice(0, 1200) + '…' : responseStr;
   } catch {
     return null;
   }
@@ -509,10 +539,23 @@ export function buildToolQuery(intent, entities) {
   // ── Order tracking ────────────────────────────────────────────
   if (intent === 'order_tracking') {
     if (orderId) {
-      return { toolName: 'get_order', args: { order_id: orderId } };
+      return { toolName: 'get_order_status', args: { order_id: orderId } };
     }
-    // No order ID yet — fetch the customer's recent orders list
-    return { toolName: 'get_orders', args: {} };
+    return { toolName: 'get_most_recent_order_status', args: {} };
+  }
+
+  // ── Customer Actions: Returns & Store Credit ─────────────────
+  if (intent === 'return') {
+    return { toolName: 'request_return', args: {} };
+  }
+  
+  if (intent === 'store_credit') {
+    return { toolName: 'get_store_credit_balances', args: {} };
+  }
+
+  // ── Collections ───────────────────────────────────────────────
+  if (intent === 'collections') {
+    return { toolName: 'search_catalog', args: { query: keywords.length > 0 ? keywords.join(' ') : 'collections' } };
   }
 
   // ── Product catalog search (product_search, budget, premium, discount) ─
@@ -528,12 +571,13 @@ export function buildToolQuery(intent, entities) {
       queryStr = queryStr ? `${queryStr} sale` : 'sale offer discount';
     }
 
-    return { toolName: 'search_shop_catalog', args: { query: queryStr || 'products' } };
+    return { toolName: 'search_catalog', args: { query: queryStr || 'products' } };
   }
 
   // ── Store policies (shipping, return, refund, cancel) ─────────
-  if (['shipping', 'return', 'refund', 'cancel'].includes(intent)) {
-    return { toolName: 'read_shop_policies', args: {} };
+  if (['shipping', 'return', 'refund', 'cancel', 'policies'].includes(intent)) {
+    // Map to powerful semantic query policy tool
+    return { toolName: 'search_shop_policies_and_faqs', args: { query: keywords.join(' ') || 'store policies' } };
   }
 
   // ── Support / contact info ────────────────────────────────────
