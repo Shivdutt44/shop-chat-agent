@@ -251,11 +251,14 @@
         ShopAIChat.UI.showTypingIndicator();
 
         try {
-          ShopAIChat.API.streamResponse(userMessage, conversationId, messagesContainer);
+          await ShopAIChat.API.streamResponse(userMessage, conversationId, messagesContainer);
         } catch (error) {
-          console.error('Error communicating with Claude API:', error);
+          console.error('Error communicating with chatbot server:', error);
           ShopAIChat.UI.removeTypingIndicator();
-          this.add("Sorry, I couldn't process your request at the moment. Please try again later.", 'assistant', messagesContainer);
+          const errorMsg = error.name === 'TypeError' && error.message.includes('fetch')
+            ? "Network error: Unable to reach the server. Please check your internet connection and try again."
+            : "Sorry, I couldn't process your request at the moment. Please try again later.";
+          this.add(errorMsg, 'assistant', messagesContainer);
         }
       },
 
@@ -533,6 +536,32 @@
             body: requestBody
           });
 
+          // Handle non-200 responses with better diagnostics
+          if (!response.ok) {
+            let errorDetail = '';
+            try {
+              const errorBody = await response.json();
+              errorDetail = errorBody.error || errorBody.details || `HTTP ${response.status} ${response.statusText}`;
+            } catch (e) {
+              const text = await response.text().catch(() => '');
+              errorDetail = text ? `HTTP ${response.status}: ${text.slice(0, 200)}` : `HTTP ${response.status} ${response.statusText}`;
+            }
+            console.error('Chat API returned error:', response.status, errorDetail);
+            ShopAIChat.UI.removeTypingIndicator();
+            const errorMessage = `Server error (${response.status}): ${errorDetail}`;
+            ShopAIChat.Message.add(errorMessage, 'assistant', messagesContainer);
+            return;
+          }
+
+          // Check that response.body is available (streaming support)
+          if (!response.body) {
+            console.error('Response body is null - streaming not supported');
+            ShopAIChat.UI.removeTypingIndicator();
+            ShopAIChat.Message.add("Your browser doesn't support streaming responses. Please try a modern browser.",
+              'assistant', messagesContainer);
+            return;
+          }
+
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
           let buffer = '';
@@ -566,6 +595,13 @@
                 }
               }
             }
+          }
+
+          // If stream ended but we never got any content or completion signal
+          if (currentMessageElement && !currentMessageElement.dataset.rawText) {
+            console.warn('Stream ended without any content - server may be busy or encountered an error');
+            ShopAIChat.UI.removeTypingIndicator();
+            ShopAIChat.Message.add("The server did not return a response. The system prompt or server may be experiencing issues. Please try again later.", 'assistant', messagesContainer);
           }
         } catch (error) {
           console.error('Error in streaming:', error);

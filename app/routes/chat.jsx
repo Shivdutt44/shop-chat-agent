@@ -173,14 +173,24 @@ async function handleChatSession({
 
   console.log(`[MCP] Available tools: ${mcpClient.tools.map(t => t.name).join(', ') || '(none)'}`);
 
-  const previousMessages = await getConversationHistory(conversationId);
-  const conversationMessages = previousMessages.map((message) => ({
-    role: message.role,
-    content: message.content
-  }));
+  // ── Load conversation history ─────────────────────────────────
+  let conversationMessages = [];
+  try {
+    const previousMessages = await getConversationHistory(conversationId);
+    conversationMessages = previousMessages.map((message) => ({
+      role: message.role,
+      content: message.content
+    }));
+  } catch (err) {
+    console.warn('[Chat] Failed to load conversation history:', err.message);
+  }
 
   // ── Step 1: Save user message ──────────────────────────────────
-  await saveMessage(conversationId, 'user', userMessage);
+  try {
+    await saveMessage(conversationId, 'user', userMessage);
+  } catch (err) {
+    console.warn('[Chat] Failed to save user message:', err.message);
+  }
   conversationMessages.push({ role: 'user', content: userMessage });
 
   // ── Step 2: NLP Intent Classification ─────────────────────────
@@ -251,25 +261,39 @@ async function handleChatSession({
       assistantStarted = true;
     }
 
-    const finalMessage = await claudeService.streamConversation(
-      {
-        messages: conversationMessages,
-        promptType,
-        tools: mcpClient.tools
-      },
-      {
-        onText: (chunk) => {
-          stream.sendMessage({ type: 'chunk', chunk });
+    try {
+      const finalMessage = await claudeService.streamConversation(
+        {
+          messages: conversationMessages,
+          promptType,
+          tools: mcpClient.tools
         },
-        onMessage: () => {},
-        onToolUse: async () => {
-          // Tool use via Claude is not wired through this flow.
-          // Local NLP tool calls are handled separately above.
+        {
+          onText: (chunk) => {
+            stream.sendMessage({ type: 'chunk', chunk });
+          },
+          onMessage: () => {},
+          onToolUse: async () => {
+            // Tool use via Claude is not wired through this flow.
+            // Local NLP tool calls are handled separately above.
+          }
         }
-      }
-    );
+      );
 
-    responseText = extractClaudeText(finalMessage) || AppConfig.errorMessages.genericError;
+      responseText = extractClaudeText(finalMessage) || AppConfig.errorMessages.genericError;
+    } catch (claudeError) {
+      console.error('[Chat] Claude API error:', claudeError.message);
+      stream.sendMessage({
+        type: 'error',
+        error: 'AI service error',
+        details: `Claude API error: ${claudeError.message}. Falling back to local NLP.`
+      });
+      // Fallback to NLP
+      responseText = generateResponse(intent, entities, toolData, activeSettings);
+      await streamText(responseText, (chunk) => {
+        stream.sendMessage({ type: 'chunk', chunk });
+      });
+    }
   } else {
     if (!assistantStarted) {
       stream.sendMessage({ type: 'new_message' });
@@ -277,16 +301,25 @@ async function handleChatSession({
     }
 
     // ── Step 4: Generate Response ───────────────────────────────────
-    responseText = generateResponse(intent, entities, toolData, activeSettings);
+    try {
+      responseText = generateResponse(intent, entities, toolData, activeSettings);
+    } catch (nlpError) {
+      console.error('[Chat] NLP response generation error:', nlpError.message);
+      responseText = "😊 Main aapki madad ke liye yahan hoon! Kripya apna sawaal thoda aur details mein bataayein — jaise product name, order ID, ya aapko kis cheez mein help chahiye.";
+    }
 
     // ── Step 5: Stream Response word-by-word ────────────────────────
     await streamText(responseText, (chunk) => {
       stream.sendMessage({ type: 'chunk', chunk });
-    });
+    });
   }
 
   // ── Step 6: Save assistant message ─────────────────────────────
-  await saveMessage(conversationId, 'assistant', responseText);
+  try {
+    await saveMessage(conversationId, 'assistant', responseText);
+  } catch (err) {
+    console.warn('[Chat] Failed to save assistant message:', err.message);
+  }
 
   // ── Step 7: Signal completion ───────────────────────────────────
   stream.sendMessage({ type: 'message_complete' });
